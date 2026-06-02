@@ -41,11 +41,10 @@ REPOS = {
 
 
 def fetch_hf(model_id: str, dest_root: Path) -> None:
+    # snapshot_download is idempotent: it verifies etags and only fetches missing/changed
+    # files, so it safely completes a partially-downloaded dir.
     dest = dest_root / model_id.replace("/", "__")
-    if dest.exists() and any(dest.iterdir()):
-        log.info("skip (present): %s", model_id)
-        return
-    log.info("downloading %s", model_id)
+    log.info("fetching %s (resumes if partial)", model_id)
     snapshot_download(repo_id=model_id, local_dir=str(dest), ignore_patterns=IGNORE)
 
 
