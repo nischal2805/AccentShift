@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+checkpoints/
+third_party/
+references/**/*.wav
+data/
+*.wav
+!tests/fixtures/*.wav
+.pytest_cache/
+eval_results.json
