@@ -9,6 +9,15 @@ import json
 import logging
 import time
 from pathlib import Path
+
+# Make Python's ssl trust the OS cert store (corporate/proxy self-signed root) before any
+# Hugging Face / torch.hub / speechbrain download happens.
+try:
+    import truststore
+    truststore.inject_into_ssl()
+except Exception:  # noqa: BLE001
+    pass
+
 import click
 import numpy as np
 import soundfile as sf

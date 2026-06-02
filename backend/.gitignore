@@ -1,4 +1,7 @@
 .venv/
+.hf_cache/
+_test_source.wav
+_dl.log
 __pycache__/
 *.pyc
 checkpoints/

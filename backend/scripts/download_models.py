@@ -12,10 +12,22 @@ import logging
 import subprocess
 from pathlib import Path
 import yaml
+
+# Corporate/proxy networks inject a self-signed root CA that certifi doesn't trust.
+# truststore makes Python's ssl use the OS (Windows) cert store, which DOES trust it.
+try:
+    import truststore
+    truststore.inject_into_ssl()
+except Exception:  # noqa: BLE001
+    pass
+
 from huggingface_hub import snapshot_download
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("download_models")
+
+# Variant weight files we never use — skip to save bandwidth (we use PyTorch/safetensors).
+IGNORE = ["*.msgpack", "*.h5", "*.onnx", "*.tflite", "*onnx*"]
 
 ROOT = Path(__file__).resolve().parents[1]
 CFG = yaml.safe_load((ROOT / "configs" / "pipeline_config.yaml").read_text())
@@ -34,7 +46,7 @@ def fetch_hf(model_id: str, dest_root: Path) -> None:
         log.info("skip (present): %s", model_id)
         return
     log.info("downloading %s", model_id)
-    snapshot_download(repo_id=model_id, local_dir=str(dest))
+    snapshot_download(repo_id=model_id, local_dir=str(dest), ignore_patterns=IGNORE)
 
 
 def clone_repo(name: str, url: str, dest_root: Path) -> None:

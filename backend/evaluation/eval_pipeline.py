@@ -7,6 +7,13 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
+
+try:
+    import truststore
+    truststore.inject_into_ssl()
+except Exception:  # noqa: BLE001
+    pass
+
 import click
 import numpy as np
 import yaml

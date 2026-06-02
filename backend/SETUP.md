@@ -2,21 +2,47 @@
 
 Architecture A pipeline (Seed-VC V2 + Vevo ensemble). All audio 16kHz mono internally.
 
-## 1. Python env (uv)
+## 1. Python env (uv venv)
+
+Tested on: RTX 4060 Laptop 8GB, CUDA 11.8 (nvcc), Windows 11, Python 3.10. Torch is pinned
+to the cu118 build to match the local toolkit — change the index URL if your CUDA differs.
 
 ```powershell
 cd backend
 uv venv --python 3.10
-.venv\Scripts\activate
-uv sync
-# Torch with CUDA 12.1 (separate index — NOT in pyproject):
-uv pip install torch==2.1.* torchaudio==2.1.* --index-url https://download.pytorch.org/whl/cu121
+# Torch matching local CUDA 11.8 (separate index, NOT in pyproject):
+uv pip install --python .\.venv\Scripts\python.exe `
+    torch==2.6.0+cu118 torchaudio==2.6.0+cu118 --index-url https://download.pytorch.org/whl/cu118
+# Everything else (Seed-VC + Vevo deps included; their requirements.txt pins are skipped on
+# purpose because they downgrade torch/numpy):
+uv pip install --python .\.venv\Scripts\python.exe `
+    numpy "scipy>=1.10" "librosa>=0.10.2" soundfile pyloudnorm pyworld silero-vad transformers `
+    jiwer speechbrain scikit-learn joblib pyyaml click huggingface-hub hf_xet truststore tqdm `
+    hydra-core omegaconf einops munch accelerate pydub
 ```
+
+> `truststore` is required on this network: a proxy injects a self-signed root CA, so plain
+> certifi-based TLS (huggingface_hub, torch.hub, speechbrain) fails with
+> `CERTIFICATE_VERIFY_FAILED`. The entrypoints call `truststore.inject_into_ssl()` to use the
+> Windows cert store. For `uv` itself, always pass `--native-tls`.
+
+Do NOT run `uv pip install -r third_party/seed-vc/requirements.txt` — it pins torch==2.4.0
+(+cu126 nightly) and numpy==1.26.4 and will break the working GPU stack.
 
 Verify CUDA:
 ```powershell
-uv run python -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0))"
+.\.venv\Scripts\python.exe -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0))"
 ```
+
+### Keep all model downloads inside the project folder
+
+Set the Hugging Face cache under `backend/` so auto-downloads (HuBERT-large, Seed-VC, Vevo
+checkpoints) don't land in the global `~/.cache`:
+
+```powershell
+$env:HF_HOME = "D:\designathon_2\backend\.hf_cache"
+```
+Models pulled by `download_models.py` already go to `backend/checkpoints/`.
 
 ## 2. Download models + clone VC repos
 
