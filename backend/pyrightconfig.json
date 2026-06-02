@@ -1,0 +1,7 @@
+{
+  "include": ["pipeline", "evaluation", "scripts", "tests", "run_pipeline.py"],
+  "exclude": ["third_party", "checkpoints", ".venv", "data"],
+  "extraPaths": ["."],
+  "reportMissingImports": "none",
+  "pythonVersion": "3.10"
+}

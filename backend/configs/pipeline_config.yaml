@@ -1,0 +1,69 @@
+audio:
+  sample_rate: 16000
+  mono: true
+  max_segment_s: 30.0
+
+vad:
+  threshold: 0.5
+  min_speech_ms: 250
+  min_silence_ms: 100
+
+models:
+  whisper: "openai/whisper-large-v3"
+  ser: "audeering/wav2vec2-large-robust-12-ft-emotion-msp-dim"
+  bigvgan: "nvidia/bigvgan-v2-24khz-100band-256x"
+  utmos_hub: "sarulab-speech/UTMOS22"
+  ecapa: "speechbrain/spkrec-ecapa-voxceleb"
+
+seed_vc:
+  repo_dir: "third_party/seed-vc"
+  device: "cuda"
+  convert_style: true          # accent + style conversion path (V2)
+  anonymization_only: false
+  diffusion_steps: 30
+  length_adjust: 1.0
+  intelligibility_cfg_rate: 0.7
+  similarity_cfg_rate: 0.7
+  top_p: 0.9
+  temperature: 1.0
+  repetition_penalty: 1.0
+  ar_checkpoint_path: null      # null = auto-download from HF (Plachta/Seed-VC)
+  cfm_checkpoint_path: null
+  compile: false
+
+vevo:
+  repo_dir: "third_party/Amphion"
+  enabled: true
+  device: "cpu"                 # 8GB card: Vevo on CPU
+  flow_matching_steps: 32
+  hf_repo: "amphion/Vevo"
+  cache_dir: "checkpoints/Vevo"
+
+devices:
+  main: "cuda"
+  vram_gb_threshold: 10         # below this, Vevo forced to CPU
+
+quality:
+  emotion_weight: 0.4
+  wer_weight: 0.4
+  mos_weight: 0.2
+
+emotion_correction:
+  threshold: 0.85
+  f0_scale_clip: [0.8, 1.2]
+  energy_scale_clip: [0.7, 1.3]
+
+postprocess:
+  crossfade_ms: 30
+  target_lufs: -23.0
+
+paths:
+  checkpoints: "checkpoints"
+  references: "references"
+
+accents:
+  - { key: "indian_english",   label: "Indian English" }
+  - { key: "chinese_english",  label: "Chinese-accented English" }
+  - { key: "japanese_english", label: "Japanese-accented English" }
+  - { key: "british_english",  label: "British English" }
+  - { key: "american_english", label: "American English" }
