@@ -36,13 +36,17 @@ Verify CUDA:
 
 ### Keep all model downloads inside the project folder
 
-Set the Hugging Face cache under `backend/` so auto-downloads (HuBERT-large, Seed-VC, Vevo
-checkpoints) don't land in the global `~/.cache`:
+Set HF cache under `backend/` before running download or inference:
 
 ```powershell
 $env:HF_HOME = "D:\designathon_2\backend\.hf_cache"
 ```
-Models pulled by `download_models.py` already go to `backend/checkpoints/`.
+
+`model_manager.py` auto-sets `HF_HOME` to `.hf_cache` if not already set, so inference works
+without manually exporting it. Set it explicitly for `download_models.py`.
+
+Whisper large-v3 is stored in HF cache only (no copy to `checkpoints/` — too large to duplicate).
+SER, BigVGAN, ECAPA are copied to `checkpoints/` for explicit local control.
 
 ## 2. Download models + clone VC repos
 
@@ -50,7 +54,7 @@ Models pulled by `download_models.py` already go to `backend/checkpoints/`.
 uv run python scripts/download_models.py
 ```
 
-Pulls (into `checkpoints/`): Whisper large-v3, audeering wav2vec2 SER, BigVGAN-v2, ECAPA.
+Pulls (into `checkpoints/`): Whisper large-v3 (GPU on droplets ≥12GB VRAM; auto-falls to CPU on 8GB cards), audeering wav2vec2 SER, BigVGAN-v2, ECAPA.
 Clones (into `third_party/`): Seed-VC, Amphion. Prefetches UTMOS via torch.hub.
 
 > Seed-VC and Amphion may need their own checkpoint downloads on first inference run

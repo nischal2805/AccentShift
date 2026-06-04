@@ -11,7 +11,6 @@ vad:
 models:
   whisper: "openai/whisper-large-v3"
   ser: "audeering/wav2vec2-large-robust-12-ft-emotion-msp-dim"
-  bigvgan: "nvidia/bigvgan-v2-24khz-100band-256x"
   utmos_hub: "sarulab-speech/UTMOS22"
   ecapa: "speechbrain/spkrec-ecapa-voxceleb"
 
@@ -28,7 +27,8 @@ seed_vc:
   temperature: 1.0
   repetition_penalty: 1.0
   ar_checkpoint_path: null      # null = auto-download from HF (Plachta/Seed-VC)
-  cfm_checkpoint_path: null
+                                # after finetune: set to checkpoints/seedvc_finetuned/<accent>/AR_epoch_*.pth
+  cfm_checkpoint_path: null     # after finetune: set to checkpoints/seedvc_finetuned/<accent>/CFM_epoch_*.pth
   compile: false
 
 vevo:
@@ -42,6 +42,7 @@ vevo:
 devices:
   main: "cuda"
   vram_gb_threshold: 10         # below this, Vevo forced to CPU
+  whisper_vram_gb_threshold: 12 # below this, Whisper+SER forced to CPU (saves VRAM for Seed-VC on 8GB cards; GPU droplets with 24GB+ run everything on CUDA)
 
 quality:
   emotion_weight: 0.4

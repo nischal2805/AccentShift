@@ -31,17 +31,18 @@ class EmotionCorrector:
             return wav  # no correction needed
         log.info("emotion drift (cos=%.3f < %.2f) — correcting", sim, self.threshold)
         x = wav.astype(np.float64)  # pyworld REQUIRES float64
-        f0, t = pyworld.harvest(x, sr)
-        f0 = pyworld.stonemask(x, f0, t, sr)
+        pw = pyworld  # type: ignore[attr-defined]  # C-ext lacks stubs
+        f0, t = pw.harvest(x, sr)  # type: ignore[attr-defined]
+        f0 = pw.stonemask(x, f0, t, sr)  # type: ignore[attr-defined]
         voiced = f0 > 0
         src_f0 = source_prosody.f0
         src_voiced = src_f0[src_f0 > 0]
         if voiced.sum() > 0 and src_voiced.size > 0:
             scale = src_voiced.mean() / f0[voiced].mean()
             f0[voiced] *= np.clip(scale, self.f0_clip[0], self.f0_clip[1])
-        sp = pyworld.cheaptrick(x, f0, t, sr)
-        ap = pyworld.d4c(x, f0, t, sr)
-        corrected = pyworld.synthesize(f0, sp, ap, sr).astype(np.float32)
+        sp = pw.cheaptrick(x, f0, t, sr)  # type: ignore[attr-defined]
+        ap = pw.d4c(x, f0, t, sr)  # type: ignore[attr-defined]
+        corrected = pw.synthesize(f0, sp, ap, sr).astype(np.float32)  # type: ignore[attr-defined]
         # energy warp toward source RMS
         out_rms = librosa.feature.rms(y=corrected)[0].mean()
         src_rms = source_prosody.energy.mean()

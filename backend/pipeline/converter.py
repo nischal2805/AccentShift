@@ -16,6 +16,7 @@ import sys
 import tempfile
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any, Optional
 import librosa
 import numpy as np
 import soundfile as sf
@@ -61,8 +62,8 @@ class SeedVCBackend(ConverterBackend):
         self.out_sr = cfg["audio"]["sample_rate"]
         if not self.repo.exists():
             raise FileNotFoundError(f"Seed-VC repo missing: {self.repo}. Run download_models.py")
-        self._wrapper = None
-        self._torch = None
+        self._wrapper: Optional[Any] = None
+        self._torch: Optional[Any] = None
 
     def _ensure_loaded(self) -> None:
         if self._wrapper is not None:
@@ -83,6 +84,7 @@ class SeedVCBackend(ConverterBackend):
 
     def convert(self, source: Segment, ref_wav_path: str) -> Candidate:
         self._ensure_loaded()
+        assert self._wrapper is not None and self._torch is not None
         torch = self._torch
         dtype = torch.float16 if self.device_str == "cuda" else torch.float32
         src_path = _write_tmp(source.audio, source.sr)
@@ -130,9 +132,8 @@ class VevoBackend(ConverterBackend):
         self.out_sr = cfg["audio"]["sample_rate"]
         if not self.repo.exists():
             raise FileNotFoundError(f"Amphion repo missing: {self.repo}. Run download_models.py")
-        self._pipeline = None
-        self._save_audio = None
-        self._torch = None
+        self._pipeline: Optional[Any] = None
+        self._torch: Optional[Any] = None
 
     def _ensure_loaded(self) -> None:
         if self._pipeline is not None:
@@ -149,9 +150,8 @@ class VevoBackend(ConverterBackend):
             return snapshot_download(repo_id=repo_id, repo_type="model",
                                      cache_dir=cache, allow_patterns=[pattern])
 
-        with _chdir(self.repo):  # config json paths below are relative to repo root
-            from models.vc.vevo.vevo_utils import VevoInferencePipeline, save_audio
-            self._save_audio = save_audio
+        with _chdir(self.repo):
+            from models.vc.vevo.vevo_utils import VevoInferencePipeline  # type: ignore[import]
             content_tok = os.path.join(dl("tokenizer/vq32/*"),
                                        "tokenizer/vq32/hubert_large_l18_c32.pkl")
             cs_tok = os.path.join(dl("tokenizer/vq8192/*"), "tokenizer/vq8192")
@@ -173,18 +173,20 @@ class VevoBackend(ConverterBackend):
 
     def convert(self, source: Segment, ref_wav_path: str) -> Candidate:
         self._ensure_loaded()
+        assert self._pipeline is not None
         src_path = _write_tmp(source.audio, source.sr)
         ref_abs = str(Path(ref_wav_path).resolve())
         with _chdir(self.repo):
-            gen_audio = self._pipeline.inference_ar_and_fm(
+            out_tensor = self._pipeline.inference_ar_and_fm(
                 src_wav_path=src_path,
                 src_text=None,
                 style_ref_wav_path=ref_abs,
                 timbre_ref_wav_path=ref_abs,
                 flow_matching_steps=self.cfg["flow_matching_steps"],
             )
-        wav = gen_audio.squeeze().detach().cpu().numpy().astype(np.float32)
-        vevo_sr = 24000  # save_audio default; Vevo vocoder output rate
+        # VevoInferencePipeline returns torch.Tensor shape [1, T] on CPU at 24kHz
+        wav = out_tensor.squeeze(0).detach().cpu().numpy().astype(np.float32)
+        vevo_sr = 24000
         if vevo_sr != self.out_sr:
             wav = librosa.resample(wav, orig_sr=vevo_sr, target_sr=self.out_sr)
         return Candidate(name=self.name, wav=wav, sr=self.out_sr)

@@ -29,6 +29,8 @@ class QualitySelector:
         try:
             import torch
             model = self.mm.load_utmos()
+            if model is None:
+                return 3.5
             t = torch.from_numpy(wav).unsqueeze(0).float()
             return float(model(t, sr))
         except Exception as e:  # noqa: BLE001

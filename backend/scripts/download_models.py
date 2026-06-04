@@ -1,20 +1,24 @@
 """Pull all pretrained weights + clone VC repos. Idempotent. Run once after env setup.
 
-Downloads (into checkpoints/): Whisper large-v3, audeering SER, BigVGAN-v2, ECAPA.
-Clones (into third_party/): Seed-VC, Amphion (skipped if already present).
-Prefetches UTMOS via torch.hub and Vevo checkpoints via snapshot_download.
+Strategy:
+  - Large models (Whisper): stored in HF_HOME cache only — no local copy (too big to duplicate).
+    from_pretrained() finds them via HF_HOME when local checkpoint dir is absent.
+  - Small models (SER, ECAPA): copied to checkpoints/ for explicit local control.
+    BigVGAN is NOT downloaded here — Seed-VC bundles its own BigVGAN internally.
+  - Repos (Seed-VC, Amphion): cloned into third_party/ (skipped if present).
+  - Vevo + UTMOS: prefetched into their respective cache dirs.
 
-Seed-VC V2 checkpoints (Plachta/Seed-VC) auto-download on first inference via its
-hydra wrapper, so they are not fetched here.
+Run from backend/:
+    $env:HF_HOME = "D:\\designathon_2\\backend\\.hf_cache"
+    uv run python scripts/download_models.py
 """
 from __future__ import annotations
 import logging
+import os
 import subprocess
 from pathlib import Path
 import yaml
 
-# Corporate/proxy networks inject a self-signed root CA that certifi doesn't trust.
-# truststore makes Python's ssl use the OS (Windows) cert store, which DOES trust it.
 try:
     import truststore
     truststore.inject_into_ssl()
@@ -26,26 +30,39 @@ from huggingface_hub import snapshot_download
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("download_models")
 
-# Variant weight files we never use — skip to save bandwidth (we use PyTorch/safetensors).
-IGNORE = ["*.msgpack", "*.h5", "*.onnx", "*.tflite", "*onnx*"]
+# Skip non-PyTorch variants and redundant fp32 bins (safetensors preferred).
+IGNORE = ["*.msgpack", "*.h5", "*.onnx", "*.tflite", "*onnx*", "*.bin",
+          "flax_model*", "tf_model*", "rust_model*"]
 
 ROOT = Path(__file__).resolve().parents[1]
 CFG = yaml.safe_load((ROOT / "configs" / "pipeline_config.yaml").read_text())
 
-HF_MODELS = [CFG["models"]["whisper"], CFG["models"]["ser"],
-             CFG["models"]["bigvgan"], CFG["models"]["ecapa"]]
+# Whisper: large model — kept in HF cache only (no local_dir copy).
+CACHE_ONLY_MODELS = [CFG["models"]["whisper"]]
+
+# Smaller models: copied to checkpoints/ for explicit local path.
+# BigVGAN excluded — Seed-VC bundles its own vocoder internally.
+LOCAL_MODELS = [CFG["models"]["ser"], CFG["models"]["ecapa"]]
+
 REPOS = {
     "seed-vc": "https://github.com/Plachtaa/seed-vc.git",
     "Amphion": "https://github.com/open-mmlab/Amphion.git",
 }
 
 
-def fetch_hf(model_id: str, dest_root: Path) -> None:
-    # snapshot_download is idempotent: it verifies etags and only fetches missing/changed
-    # files, so it safely completes a partially-downloaded dir.
+def fetch_hf_cache(model_id: str) -> None:
+    """Download into HF cache only (no local copy). Used for large models like Whisper."""
+    log.info("caching %s (HF cache only, no local copy)", model_id)
+    snapshot_download(repo_id=model_id, ignore_patterns=IGNORE)
+    log.info("cached %s", model_id)
+
+
+def fetch_hf_local(model_id: str, dest_root: Path) -> None:
+    """Download into checkpoints/<model> — resumes partial downloads via etag."""
     dest = dest_root / model_id.replace("/", "__")
-    log.info("fetching %s (resumes if partial)", model_id)
+    log.info("fetching %s -> %s", model_id, dest)
     snapshot_download(repo_id=model_id, local_dir=str(dest), ignore_patterns=IGNORE)
+    log.info("done %s", model_id)
 
 
 def clone_repo(name: str, url: str, dest_root: Path) -> None:
@@ -59,7 +76,6 @@ def clone_repo(name: str, url: str, dest_root: Path) -> None:
 
 
 def prefetch_vevo() -> None:
-    """Pull Vevo tokenizers / AR / FM / vocoder checkpoints from HF."""
     cache = ROOT / CFG["vevo"]["cache_dir"]
     repo = CFG["vevo"]["hf_repo"]
     patterns = [
@@ -90,10 +106,16 @@ def main() -> None:
     ckpt.mkdir(parents=True, exist_ok=True)
     tp = ROOT / "third_party"
     tp.mkdir(parents=True, exist_ok=True)
-    for m in HF_MODELS:
-        fetch_hf(m, ckpt)
+
+    for m in CACHE_ONLY_MODELS:
+        fetch_hf_cache(m)
+
+    for m in LOCAL_MODELS:
+        fetch_hf_local(m, ckpt)
+
     for name, url in REPOS.items():
         clone_repo(name, url, tp)
+
     prefetch_vevo()
     prefetch_utmos()
     log.info("done. Next: follow SETUP.md to install third_party repo requirements.")

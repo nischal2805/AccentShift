@@ -18,21 +18,21 @@ class FeatureExtractor:
     @torch.no_grad()
     def transcribe(self, seg: Segment) -> tuple[str, list[dict]]:
         proc, model = self.mm.whisper_processor, self.mm.whisper
+        whisper_dev = self.mm.whisper_device  # always "cpu"
         feats = proc(seg.audio, sampling_rate=seg.sr, return_tensors="pt")
-        input_features = feats.input_features.to(self.device, dtype=model.dtype)
+        input_features = feats.input_features.to(whisper_dev, dtype=model.dtype)
         out = model.generate(input_features, language="en", task="transcribe")
         text = proc.batch_decode(out, skip_special_tokens=True)
         text = text[0].strip() if text else ""
-        # Word-level timestamps are not required downstream (speaking_rate uses word count).
         return text, []
 
     @torch.no_grad()
     def emotion(self, seg: Segment) -> EmotionVec:
-        """audeering MSP-dim wav2vec2: logits = [arousal, dominance, valence].
-        Confirm ordering against the installed model if results look off."""
+        """audeering MSP-dim wav2vec2: logits = [arousal, dominance, valence]."""
         ext, model = self.mm.ser_extractor, self.mm.ser
+        ser_dev = self.mm.ser_device  # always "cpu"
         inputs = ext(seg.audio, sampling_rate=seg.sr, return_tensors="pt")
-        iv = {k: v.to(self.device) for k, v in inputs.items()}
+        iv = {k: v.to(ser_dev) for k, v in inputs.items()}
         out = model(**iv)
         logits = out.logits if hasattr(out, "logits") else out[1]
         vals = logits.squeeze().float().cpu().numpy().reshape(-1)
@@ -41,8 +41,8 @@ class FeatureExtractor:
 
     def prosody(self, seg: Segment, n_words: int) -> ProsodyFeatures:
         x = seg.audio.astype(np.float64)  # pyworld REQUIRES float64
-        f0, timeaxis = pyworld.harvest(x, seg.sr)
-        f0 = pyworld.stonemask(x, f0, timeaxis, seg.sr)
+        f0, timeaxis = pyworld.harvest(x, seg.sr)  # type: ignore[attr-defined]
+        f0 = pyworld.stonemask(x, f0, timeaxis, seg.sr)  # type: ignore[attr-defined]
         energy = librosa.feature.rms(y=seg.audio)[0]
         rate = n_words / seg.duration_s if seg.duration_s > 0 else 0.0
         return ProsodyFeatures(f0=f0, timeaxis=timeaxis, energy=energy, speaking_rate=rate)
