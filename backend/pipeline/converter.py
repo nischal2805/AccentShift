@@ -95,7 +95,7 @@ class SeedVCBackend(ConverterBackend):
                 target_audio_path=ref_abs,
                 diffusion_steps=self.cfg["diffusion_steps"],
                 length_adjust=self.cfg["length_adjust"],
-                intelligebility_cfg_rate=self.cfg["intelligibility_cfg_rate"],
+                intelligibility_cfg_rate=self.cfg["intelligibility_cfg_rate"],
                 similarity_cfg_rate=self.cfg["similarity_cfg_rate"],
                 top_p=self.cfg["top_p"],
                 temperature=self.cfg["temperature"],

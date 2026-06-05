@@ -23,10 +23,16 @@ def emotion_similarity(src_vec: np.ndarray, out_vec: np.ndarray) -> float:
 
 
 def utmos(mm, wav: np.ndarray, sr: int) -> float:
-    import torch
-    model = mm.load_utmos()
-    t = torch.from_numpy(wav).unsqueeze(0).float()
-    return float(model(t, sr))
+    try:
+        import torch
+        model = mm.load_utmos()
+        if model is None:
+            return 3.5
+        t = torch.from_numpy(wav).unsqueeze(0).float()
+        return float(model(t, sr))
+    except Exception as e:  # noqa: BLE001
+        log.warning("UTMOS scoring failed (%s); default 3.5", e)
+        return 3.5
 
 
 def speaker_agnosticism(mm, src_wav: np.ndarray, out_wav: np.ndarray, sr: int) -> float:

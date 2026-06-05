@@ -39,7 +39,8 @@ class QualitySelector:
 
     def score(self, cand: Candidate, source: Segment,
               source_emotion: EmotionVec, source_text: str) -> tuple[float, dict]:
-        cand_seg = Segment(audio=cand.wav, start_s=0.0, end_s=0.0, sr=cand.sr)
+        cand_seg = Segment(audio=cand.wav, start_s=0.0,
+                           end_s=len(cand.wav) / cand.sr, sr=cand.sr)
         out_emotion = self.fe.emotion(cand_seg)
         emo_sim = _cosine(source_emotion.to_array(), out_emotion.to_array())
         out_text, _ = self.fe.transcribe(cand_seg)

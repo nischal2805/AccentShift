@@ -24,7 +24,7 @@ from pipeline.feature_extractor import FeatureExtractor
 from pipeline.quality_selector import QualitySelector
 from pipeline.emotion_corrector import EmotionCorrector
 from pipeline.postprocessor import Postprocessor
-from pipeline.converter import SeedVCBackend, VevoBackend
+from pipeline.converter import SeedVCBackend, VevoBackend, ConverterBackend
 from evaluation import metrics as M
 from evaluation.accent_classifier import AccentClassifier
 
@@ -48,7 +48,7 @@ def main(test_dir, target_accent, out_json, accent_clf, config_path):
     mm = ModelManager.get(config_path)
     pre, fe = Preprocessor(cfg), FeatureExtractor(mm)
     qs, ec, post = QualitySelector(cfg, fe, mm), EmotionCorrector(cfg), Postprocessor(cfg)
-    backends = [SeedVCBackend(cfg, mm.device)]
+    backends: list[ConverterBackend] = [SeedVCBackend(cfg, mm.device)]
     if cfg["vevo"]["enabled"]:
         backends.append(VevoBackend(cfg, mm.vevo_device))
     ref_dir = ROOT / cfg["paths"]["references"] / target_accent
@@ -73,7 +73,11 @@ def main(test_dir, target_accent, out_json, accent_clf, config_path):
             src_emotion = fe.emotion(seg)
             prosody = fe.prosody(seg, n_words=len(text.split()))
             cands = [b.convert(seg, ref) for b in backends]
-            cand, _score, meta = qs.select(cands, seg, src_emotion, text)
+            result = qs.select(cands, seg, src_emotion, text)
+            if result is None:
+                log.warning("Segment produced no candidates; skipping.")
+                continue
+            cand, _score, meta = result
             corrected = ec.correct(cand.wav, cand.sr, src_emotion, meta["emotion_output"], prosody)
             outs.append(corrected)
             emo_sims.append(meta["emotion_sim"])

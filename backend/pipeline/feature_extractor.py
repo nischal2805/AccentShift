@@ -18,10 +18,13 @@ class FeatureExtractor:
     @torch.no_grad()
     def transcribe(self, seg: Segment) -> tuple[str, list[dict]]:
         proc, model = self.mm.whisper_processor, self.mm.whisper
-        whisper_dev = self.mm.whisper_device  # always "cpu"
+        whisper_dev = self.mm.whisper_device  # always "cpu" on 8GB GPU
         feats = proc(seg.audio, sampling_rate=seg.sr, return_tensors="pt")
         input_features = feats.input_features.to(whisper_dev, dtype=model.dtype)
-        out = model.generate(input_features, language="en", task="transcribe")
+        # Force English transcription — critical for accent-converted speech that may
+        # sound like a different language to Whisper's language-detection head.
+        forced_decoder_ids = proc.get_decoder_prompt_ids(language="en", task="transcribe")
+        out = model.generate(input_features, forced_decoder_ids=forced_decoder_ids)
         text = proc.batch_decode(out, skip_special_tokens=True)
         text = text[0].strip() if text else ""
         return text, []

@@ -26,7 +26,7 @@ import yaml
 from pipeline.model_manager import ModelManager
 from pipeline.preprocessor import Preprocessor, load_audio
 from pipeline.feature_extractor import FeatureExtractor
-from pipeline.converter import SeedVCBackend, VevoBackend
+from pipeline.converter import SeedVCBackend, VevoBackend, ConverterBackend
 from pipeline.quality_selector import QualitySelector
 from pipeline.emotion_corrector import EmotionCorrector
 from pipeline.postprocessor import Postprocessor
@@ -46,7 +46,7 @@ def pick_reference(cfg: dict, accent: str) -> str:
 
 
 def build_backends(cfg: dict, mm: ModelManager):
-    backends = [SeedVCBackend(cfg, mm.device)]
+    backends: list[ConverterBackend] = [SeedVCBackend(cfg, mm.device)]
     if cfg["vevo"]["enabled"]:
         backends.append(VevoBackend(cfg, mm.vevo_device))
     return backends
@@ -83,7 +83,11 @@ def main(input_path, target_accent, output_path, metrics_out, config_path):
         src_emotion = fe.emotion(seg)
         prosody = fe.prosody(seg, n_words=len(text.split()))
         candidates = [b.convert(seg, ref) for b in backends]
-        cand, score, meta = qs.select(candidates, seg, src_emotion, text)
+        result = qs.select(candidates, seg, src_emotion, text)
+        if result is None:
+            log.warning("Segment %d produced no candidates; skipping.", i)
+            continue
+        cand, score, meta = result
         corrected = ec.correct(cand.wav, cand.sr, src_emotion,
                                meta["emotion_output"], prosody)
         out_wavs.append(corrected)

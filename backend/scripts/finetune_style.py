@@ -79,8 +79,8 @@ def _inject_seed_vc():
 @click.option("--num-workers", default=4, show_default=True)
 @click.option("--mixed-precision", default="bf16", show_default=True,
               help="bf16=A100, fp16=V100, no=debug")
-@click.option("--train-ar", is_flag=True, default=True,
-              help="Fine-tune AR decoder too (recommended for full accent transfer).")
+@click.option("--train-ar", is_flag=True, default=False,
+              help="Also fine-tune the AR decoder (more VRAM; recommended for strong accent transfer).")
 @click.option("--pretrained-cfm", default=None)
 @click.option("--pretrained-ar", default=None)
 def main(accent, data_dir, run_name, steps, batch_size, save_every, num_workers,
