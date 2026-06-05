@@ -42,14 +42,14 @@ SEED_VC = ROOT / "third_party" / "seed-vc"
 # Seed-VC V2 training config (Hydra/OmegaConf, relative to seed-vc repo root)
 SEED_VC_TRAIN_CONFIG = "configs/v2/vc_wrapper.yaml"
 
-# Accent -> L2-Arctic speaker mapping (for --accent shortcut)
+# Accent -> L2-Arctic speaker mapping (verified against L2-Arctic v5.0 README)
 ACCENT_SPEAKERS = {
-    "indian_english":     ["ASI", "MBMPS"],
-    "chinese_english":    ["HKK", "YBAA"],
-    "korean_english":     ["YDCK", "YKWK"],
-    "vietnamese_english": ["HQTV", "PNV"],
-    "spanish_english":    ["EBVS", "NJS"],
-    "arabic_english":     ["ERMS", "RRBI"],
+    "indian_english":     ["ASI", "RRBI", "SVBI", "TNI"],    # Hindi L1
+    "chinese_english":    ["BWC", "LXC", "NCC", "TXHC"],     # Mandarin L1
+    "korean_english":     ["HJK", "HKK", "YDCK", "YKWK"],   # Korean L1
+    "vietnamese_english": ["HQTV", "PNV", "THV", "TLV"],    # Vietnamese L1
+    "spanish_english":    ["EBVS", "ERMS", "MBMPS", "NJS"], # Spanish L1
+    "arabic_english":     ["ABA", "SKA", "YBAA", "ZHAA"],   # Arabic L1
 }
 
 

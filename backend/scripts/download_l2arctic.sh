@@ -20,14 +20,14 @@ mkdir -p "$L2_RAW" "$FT_DIR"
 
 TARGET_ACCENT="${1:-all}"
 
-# L2-Arctic speaker -> accent mapping
+# L2-Arctic speaker -> accent mapping (verified against L2-Arctic v5.0 README)
 declare -A SPEAKER_ACCENT=(
-    [ASI]="indian_english"   [MBMPS]="indian_english"
-    [HKK]="chinese_english"  [YBAA]="chinese_english"
-    [YDCK]="korean_english"  [YKWK]="korean_english"
-    [HQTV]="vietnamese_english" [PNV]="vietnamese_english"
-    [EBVS]="spanish_english" [NJS]="spanish_english"
-    [ERMS]="arabic_english"  [RRBI]="arabic_english"
+    [ASI]="indian_english"   [RRBI]="indian_english"   [SVBI]="indian_english"  [TNI]="indian_english"
+    [BWC]="chinese_english"  [LXC]="chinese_english"   [NCC]="chinese_english"  [TXHC]="chinese_english"
+    [HJK]="korean_english"   [HKK]="korean_english"    [YDCK]="korean_english"  [YKWK]="korean_english"
+    [HQTV]="vietnamese_english" [PNV]="vietnamese_english" [THV]="vietnamese_english" [TLV]="vietnamese_english"
+    [EBVS]="spanish_english" [ERMS]="spanish_english"  [MBMPS]="spanish_english" [NJS]="spanish_english"
+    [ABA]="arabic_english"   [SKA]="arabic_english"    [YBAA]="arabic_english"  [ZHAA]="arabic_english"
 )
 
 # Japanese L2-Arctic not in standard release — use Mozilla Common Voice
