@@ -13,3 +13,5 @@ runs/
 !references/**/*.wav
 .pytest_cache/
 eval_results.json
+docs/
+.claude
