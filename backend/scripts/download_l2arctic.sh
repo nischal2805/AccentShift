@@ -44,11 +44,20 @@ else
 fi
 
 echo "=== Extracting ==="
-if [ ! -d "$L2_RAW/l2arctic_v5" ]; then
-    unzip -q "$L2_ZIP" -d "$L2_RAW"
-fi
+# Unzip main archive (overwrite silently with -o)
+unzip -o -q "$L2_ZIP" -d "$L2_RAW"
+
+# L2-Arctic v5 ships each speaker as a separate zip inside the main archive
+for SPK_ZIP in "$L2_RAW"/*.zip; do
+    [ "$SPK_ZIP" = "$L2_ZIP" ] && continue
+    [ -f "$SPK_ZIP" ] || continue
+    SPK_NAME=$(basename "$SPK_ZIP" .zip)
+    echo "  Extracting speaker $SPK_NAME..."
+    unzip -o -q "$SPK_ZIP" -d "$L2_RAW"
+done
 
 echo "=== Organizing WAVs by accent ==="
+# Handle both flat layout (L2_RAW/SPEAKER/) and nested (L2_RAW/l2arctic_v5/SPEAKER/)
 L2_ROOT="$L2_RAW/l2arctic_v5"
 
 for SPEAKER in "${!SPEAKER_ACCENT[@]}"; do
@@ -58,8 +67,9 @@ for SPEAKER in "${!SPEAKER_ACCENT[@]}"; do
     fi
 
     SPK_WAV_DIR=""
-    # L2-Arctic layout: <speaker>/wav/*.wav
-    for CANDIDATE in "$L2_ROOT/$SPEAKER/wav" "$L2_ROOT/$SPEAKER"; do
+    # Check nested layout first, then flat layout
+    for CANDIDATE in "$L2_ROOT/$SPEAKER/wav" "$L2_ROOT/$SPEAKER" \
+                     "$L2_RAW/$SPEAKER/wav" "$L2_RAW/$SPEAKER"; do
         if [ -d "$CANDIDATE" ]; then
             SPK_WAV_DIR="$CANDIDATE"
             break
