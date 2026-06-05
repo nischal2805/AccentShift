@@ -125,11 +125,16 @@ def main(accent, data_dir, run_name, steps, batch_size, save_every, num_workers,
          telegram_token, telegram_chat_id, notify_every):
     _check_prereqs()
 
-    tg = bool(telegram_token and telegram_chat_id)
-    if tg:
-        log.info("Telegram notifications enabled (chat_id=%s)", telegram_chat_id)
-    else:
-        log.info("Telegram not configured — set TELEGRAM_TOKEN + TELEGRAM_CHAT_ID or pass flags")
+    # In multi-GPU (accelerate launch), LOCAL_RANK is set by the launcher.
+    # Only rank 0 sends Telegram and manages checkpoints to avoid duplicate messages.
+    is_main = int(os.environ.get("LOCAL_RANK", "0")) == 0
+
+    tg = bool(telegram_token and telegram_chat_id and is_main)
+    if is_main:
+        if tg:
+            log.info("Telegram notifications enabled (chat_id=%s)", telegram_chat_id)
+        else:
+            log.info("Telegram not configured — set TELEGRAM_TOKEN + TELEGRAM_CHAT_ID or pass flags")
 
     ft_root = ROOT / "data" / "finetune"
 
