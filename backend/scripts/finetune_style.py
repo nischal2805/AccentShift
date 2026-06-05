@@ -146,24 +146,33 @@ def main(accent, data_dir, run_name, steps, batch_size, save_every, num_workers,
             "Use --accent all to merge all accents under data/finetune/."
         )
     elif accent == "all":
-        import shutil, subprocess as _sp
+        import shutil, subprocess as _sp, time
         merged = ROOT / "data" / "finetune_all"
-        if merged.exists():
-            # shutil.rmtree fails on symlink dirs in Python 3.12; rm -rf is reliable
-            _sp.run(["rm", "-rf", str(merged)], check=True)
-        merged.mkdir(parents=True)
-        total = 0
-        for accent_dir in sorted(ft_root.iterdir()):
-            if not accent_dir.is_dir():
-                continue
-            for wav in accent_dir.rglob("*.wav"):
-                dst = merged / f"{accent_dir.name}__{wav.name}"
-                try:
-                    dst.symlink_to(wav.resolve())
-                except (OSError, NotImplementedError):
-                    shutil.copy2(wav, dst)
-                total += 1
-        log.info("Staged %d WAVs (symlinks) from all accents -> %s", total, merged)
+        sentinel = ROOT / "data" / "finetune_all.ready"
+        if is_main:
+            # Only rank 0 sets up the merged dir; other ranks wait for sentinel
+            sentinel.unlink(missing_ok=True)
+            if merged.exists():
+                _sp.run(["rm", "-rf", str(merged)], check=True)
+            merged.mkdir(parents=True)
+            total = 0
+            for accent_dir in sorted(ft_root.iterdir()):
+                if not accent_dir.is_dir():
+                    continue
+                for wav in accent_dir.rglob("*.wav"):
+                    dst = merged / f"{accent_dir.name}__{wav.name}"
+                    try:
+                        dst.symlink_to(wav.resolve())
+                    except (OSError, NotImplementedError):
+                        shutil.copy2(wav, dst)
+                    total += 1
+            log.info("Staged %d WAVs (symlinks) from all accents -> %s", total, merged)
+            sentinel.touch()
+        else:
+            log.info("Rank %d waiting for rank 0 to stage WAVs...", int(os.environ.get("LOCAL_RANK", "1")))
+            while not sentinel.exists():
+                time.sleep(0.5)
+            log.info("Rank %d: WAV staging done, proceeding", int(os.environ.get("LOCAL_RANK", "1")))
         data_path = merged
     else:
         data_path = ft_root / accent
