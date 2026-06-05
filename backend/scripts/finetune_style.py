@@ -146,10 +146,11 @@ def main(accent, data_dir, run_name, steps, batch_size, save_every, num_workers,
             "Use --accent all to merge all accents under data/finetune/."
         )
     elif accent == "all":
-        import shutil
+        import shutil, subprocess as _sp
         merged = ROOT / "data" / "finetune_all"
         if merged.exists():
-            shutil.rmtree(merged)
+            # shutil.rmtree fails on symlink dirs in Python 3.12; rm -rf is reliable
+            _sp.run(["rm", "-rf", str(merged)], check=True)
         merged.mkdir(parents=True)
         total = 0
         for accent_dir in sorted(ft_root.iterdir()):
