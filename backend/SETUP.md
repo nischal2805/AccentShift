@@ -18,7 +18,8 @@ uv pip install --python .\.venv\Scripts\python.exe `
 uv pip install --python .\.venv\Scripts\python.exe `
     numpy "scipy>=1.10" "librosa>=0.10.2" soundfile pyloudnorm pyworld silero-vad transformers `
     jiwer speechbrain scikit-learn joblib pyyaml click huggingface-hub hf_xet truststore tqdm `
-    hydra-core omegaconf einops munch accelerate pydub
+    hydra-core omegaconf einops munch accelerate pydub `
+    "fastapi>=0.111" "uvicorn[standard]>=0.29" python-multipart
 ```
 
 > `truststore` is required on this network: a proxy injects a self-signed root CA, so plain
@@ -124,11 +125,25 @@ uv run python -m evaluation.eval_pipeline --test-dir data\l2arctic_test `
 # On the A100 box, after datasets are in place:
 uv run python scripts\prepare_l2arctic.py --l2arctic-dir data\l2arctic --cmu-dir data\cmu_arctic `
     --out data\l2arctic_pairs\manifest.jsonl
-uv run python scripts\finetune_style.py --config configs\finetune_config.yaml `
-    --manifest data\l2arctic_pairs\manifest.jsonl
+uv run python scripts\finetune_style.py --accent all
 ```
 
 `finetune_style.py` is a guarded skeleton — wire the Seed-VC trainer imports (step 1 in that
 file) against the cloned repo on the A100 box before running. After training, copy the
 checkpoint to `checkpoints/seedvc_finetuned/` and point `seed_vc` in
 `configs/pipeline_config.yaml` at it.
+
+## 9. Start the API server
+
+```powershell
+$env:HF_HOME = "D:\designathon_2\backend\.hf_cache"
+cd backend
+uv run uvicorn api.main:app --host 0.0.0.0 --port 8000
+```
+
+Once you see `AccentShift is ready.` in the logs, the server accepts requests.
+Test with:
+```powershell
+Invoke-RestMethod http://localhost:8000/health
+Invoke-RestMethod http://localhost:8000/accents
+```
