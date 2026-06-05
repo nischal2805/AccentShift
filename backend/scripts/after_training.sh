@@ -30,9 +30,9 @@ echo ""
 echo "=== Checkpoint saved to: $DEST ==="
 echo ""
 
-# Find the latest CFM checkpoint
-LATEST_CFM=$(find "$DEST" -name "CFM_epoch_*_step_*.pth" | sort -t_ -k6 -n | tail -1)
-LATEST_AR=$(find "$DEST" -name "AR_epoch_*_step_*.pth" 2>/dev/null | sort -t_ -k6 -n | tail -1 || true)
+# Seed-VC max_keep=1 so only one checkpoint survives. Just grab it directly.
+LATEST_CFM=$(find "$DEST" -name "CFM_epoch_*_step_*.pth" | head -1)
+LATEST_AR=$(find "$DEST" -name "AR_epoch_*_step_*.pth" 2>/dev/null | head -1 || true)
 
 if [ -z "$LATEST_CFM" ]; then
     echo "WARNING: No CFM checkpoint found in $DEST"

@@ -1,27 +1,30 @@
-"""Fine-tune Seed-VC V2 CFM (style encoder) on target-accent audio.
+"""Fine-tune Seed-VC V2 CFM + AR on target-accent audio.
 
-RUN ON A100 ONLY. The 8GB 4060 cannot hold training state.
+Run on L40S 48GB (DigitalOcean) or any GPU with >=20GB VRAM.
 
 How it works:
   Seed-VC's Trainer walks a flat directory of WAV files and fine-tunes the CFM
-  (flow-matching style encoder). No paired data needed — just target-accent WAVs.
-  AR decoder is frozen. Only the CFM + cfm_length_regulator train (~50M params).
+  (flow-matching style encoder) and optionally the AR decoder.
+  No paired data needed — just target-accent WAVs.
 
-Quick start on A100:
+Quick start on L40S:
     # 1. Setup env (once):
     bash scripts/a100_setup.sh
 
-    # 2. Download dataset:
-    bash scripts/download_l2arctic.sh indian_english
+    # 2. Put WAVs in data/finetune/<accent>/ (see TRAINING.md)
 
     # 3. Train:
     python scripts/finetune_style.py --accent indian_english
 
     # 4. SCP checkpoint back:
-    scp -r user@a100-box:/path/to/project/runs/indian_english_ft/ .
+    scp -r root@<droplet-ip>:/root/AccentShift/backend/runs/indian_english_ft/ .
 
-Output: runs/<run_name>/CFM_epoch_*_step_*.pth
+Output: runs/<run_name>/CFM_epoch_*_step_*.pth  (only latest kept, max_keep=1)
+Epoch counter in filename reflects training loop epochs, NOT steps/1000.
 After training: set seed_vc.cfm_checkpoint_path in pipeline_config.yaml to the .pth path.
+
+NOTE: Seed-VC downloads its content extractor weights (HuBERT, CAMPPlus) from HF
+on the FIRST training step — requires internet on the training box.
 """
 from __future__ import annotations
 import logging
@@ -29,7 +32,6 @@ import os
 import sys
 from pathlib import Path
 import click
-import yaml
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("finetune_style")
@@ -73,8 +75,10 @@ def _inject_seed_vc():
               help="Explicit WAV directory (overrides --accent). Can be a merged dir.")
 @click.option("--run-name", default=None,
               help="Checkpoint dir name. Saved to runs/<run-name>/.")
-@click.option("--steps", default=50000, show_default=True)
-@click.option("--batch-size", default=16, show_default=True)
+@click.option("--steps", default=15000, show_default=True,
+              help="15k steps ~= 30-60 epochs on 2k WAVs. 80k risks overfitting 2-4 speakers.")
+@click.option("--batch-size", default=8, show_default=True,
+              help="8 safe for L40S 48GB with --train-ar. 16 CFM-only only.")
 @click.option("--save-every", default=1000, show_default=True)
 @click.option("--num-workers", default=4, show_default=True)
 @click.option("--mixed-precision", default="bf16", show_default=True,
@@ -91,9 +95,13 @@ def main(accent, data_dir, run_name, steps, batch_size, save_every, num_workers,
 
     if data_dir is not None:
         data_path = Path(data_dir)
-    elif accent == "all" or accent is None:
-        # Merge all available accent dirs into one flat view via symlink staging dir
-        import shutil, tempfile
+    elif accent is None:
+        raise SystemExit(
+            "Provide --accent <accent_key> or --data-dir <path>.\n"
+            "Use --accent all to merge all accents under data/finetune/."
+        )
+    elif accent == "all":
+        import shutil
         merged = ROOT / "data" / "finetune_all"
         if merged.exists():
             shutil.rmtree(merged)
@@ -104,12 +112,13 @@ def main(accent, data_dir, run_name, steps, batch_size, save_every, num_workers,
                 continue
             for wav in accent_dir.rglob("*.wav"):
                 dst = merged / f"{accent_dir.name}__{wav.name}"
-                if not dst.exists():
+                try:
+                    dst.symlink_to(wav.resolve())
+                except (OSError, NotImplementedError):
                     shutil.copy2(wav, dst)
                 total += 1
-        log.info("Merged %d WAVs from all accents -> %s", total, merged)
+        log.info("Staged %d WAVs (symlinks) from all accents -> %s", total, merged)
         data_path = merged
-        accent = "all"
     else:
         data_path = ft_root / accent
 

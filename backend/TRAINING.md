@@ -1,7 +1,7 @@
-# AccentShift — A100 Fine-Tuning Guide
+# AccentShift — Fine-Tuning Guide
 
 Complete guide for training Seed-VC V2 on L2-Arctic accent data and retrieving the checkpoint.
-Run everything on the A100 box. The 8GB 4060 cannot train.
+Target: **DigitalOcean L40S 48GB** ($1.57/hr). Also works on A100 40/80GB.
 
 ---
 
@@ -75,16 +75,20 @@ After download: WAVs organized under `data/finetune/<accent>/` (~1150 files per 
 ```bash
 python scripts/finetune_style.py \
     --accent all \
-    --steps 80000 \
-    --batch-size 16 \
-    --save-every 2000 \
+    --steps 15000 \
+    --batch-size 8 \
+    --save-every 1000 \
     --num-workers 8 \
     --mixed-precision bf16 \
     --train-ar
 ```
 
 Merges all accent WAVs → `data/finetune_all/` → trains one universal checkpoint.
-**Estimated time on A100 40GB: ~12–16 hours for 80k steps.**
+**Estimated time on L40S 48GB: ~1–2 hours for 15k steps.**
+
+> **Why 15k not 80k?** L2-Arctic has only 2–4 speakers per accent (~2k–5k WAVs total).
+> At batch 8, 15k steps ≈ 30–60 epochs — enough for style adaptation without memorizing
+> specific speaker timbre. 80k steps will overfit: loss looks great, accent output sounds wrong.
 
 ### Option B: Per-accent (sharper but 6 separate runs)
 
@@ -92,8 +96,8 @@ Merges all accent WAVs → `data/finetune_all/` → trains one universal checkpo
 for ACCENT in indian_english chinese_english korean_english arabic_english spanish_english; do
     python scripts/finetune_style.py \
         --accent "$ACCENT" \
-        --steps 50000 \
-        --batch-size 16 \
+        --steps 15000 \
+        --batch-size 8 \
         --save-every 1000 \
         --num-workers 8 \
         --mixed-precision bf16 \
@@ -101,17 +105,17 @@ for ACCENT in indian_english chinese_english korean_english arabic_english spani
 done
 ```
 
-**~8 hours per accent on A100.**
+**~20–40 min per accent on L40S.**
 
 ### Key flags
 
 | Flag | Default | Notes |
 |---|---|---|
-| `--steps` | 50000 | 80k recommended for all-accent |
-| `--batch-size` | 16 | Max for A100 40GB with bf16 |
-| `--train-ar` | True | Fine-tunes AR decoder too (full accent transfer) |
-| `--mixed-precision` | bf16 | A100: bf16. V100: fp16. Debug: no |
-| `--save-every` | 1000 | Save checkpoint every N steps |
+| `--steps` | 15000 | 15k ≈ 30-60 epochs on 2k WAVs. Sweet spot for style adaptation |
+| `--batch-size` | 8 | Safe for L40S 48GB with `--train-ar`. Use 16 for CFM-only |
+| `--train-ar` | False | Fine-tunes AR decoder too (stronger accent; +4GB VRAM) |
+| `--mixed-precision` | bf16 | L40S/A100: bf16. V100: fp16. Debug: no |
+| `--save-every` | 1000 | Seed-VC keeps only the **latest** checkpoint (max_keep=1) |
 
 ### Monitor training
 
@@ -140,9 +144,13 @@ scp -r root@<a100-ip>:/root/designathon_2/backend/runs/all_ft/ \
     D:/designathon_2/backend/checkpoints/seedvc_finetuned/all/
 ```
 
-Checkpoint files:
+Checkpoint files (only **latest** is kept — Seed-VC deletes older ones):
 - `CFM_epoch_XXXXX_step_XXXXX.pth` — style encoder weights
 - `AR_epoch_XXXXX_step_XXXXX.pth` — AR decoder weights
+
+> The `epoch` field in the filename is the training loop epoch counter, **not** steps÷1000.
+> With 2k WAVs at batch 8, one epoch ≈ 250 iters, so 15k steps → epoch ~60.
+> Actual filename will look like `CFM_epoch_00060_step_15000.pth`.
 
 ---
 
@@ -153,8 +161,9 @@ Edit `configs/pipeline_config.yaml`:
 ```yaml
 seed_vc:
   # Point at the retrieved checkpoint:
-  cfm_checkpoint_path: "checkpoints/seedvc_finetuned/all/CFM_epoch_00080_step_80000.pth"
-  ar_checkpoint_path:  "checkpoints/seedvc_finetuned/all/AR_epoch_00080_step_80000.pth"
+  # Use the actual filename from your run (epoch counter varies by dataset size)
+  cfm_checkpoint_path: "checkpoints/seedvc_finetuned/all/CFM_epoch_XXXXX_step_15000.pth"
+  ar_checkpoint_path:  "checkpoints/seedvc_finetuned/all/AR_epoch_XXXXX_step_15000.pth"
 ```
 
 Then test:
@@ -178,15 +187,15 @@ cd D:\designathon_2\backend
 | Extracted WAVs | ~4.5 GB |
 | Seed-VC + deps | ~8 GB (already in HF cache) |
 | Training checkpoints | ~800 MB each (CFM) |
-| **Total A100 disk needed** | ~20 GB |
+| **Total L40S disk needed** | ~20 GB (500GB NVMe on DO droplet, plenty) |
 
 ---
 
 ## Troubleshooting
 
 **OOM during training:**
-- Reduce `--batch-size` to 8 and increase `--steps` proportionally
-- Disable `--train-ar` (CFM only is faster + less memory)
+- Reduce `--batch-size` to 4 or remove `--train-ar` (CFM-only saves ~4GB)
+- L40S 48GB: batch 8 + `--train-ar` should be fine; OOM on smaller cards
 
 **Loss not decreasing after 10k steps:**
 - Learning rate might be too high — Seed-VC default is 2e-5 (hardcoded in `build_single_optimizer`)
