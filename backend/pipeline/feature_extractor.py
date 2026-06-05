@@ -18,7 +18,7 @@ class FeatureExtractor:
     @torch.no_grad()
     def transcribe(self, seg: Segment) -> tuple[str, list[dict]]:
         proc, model = self.mm.whisper_processor, self.mm.whisper
-        whisper_dev = self.mm.whisper_device  # always "cpu"
+        whisper_dev = self.mm.whisper_device  # cpu on <12GB cards, cuda on big droplets
         feats = proc(seg.audio, sampling_rate=seg.sr, return_tensors="pt")
         input_features = feats.input_features.to(whisper_dev, dtype=model.dtype)
         out = model.generate(input_features, language="en", task="transcribe")
@@ -30,7 +30,7 @@ class FeatureExtractor:
     def emotion(self, seg: Segment) -> EmotionVec:
         """audeering MSP-dim wav2vec2: logits = [arousal, dominance, valence]."""
         ext, model = self.mm.ser_extractor, self.mm.ser
-        ser_dev = self.mm.ser_device  # always "cpu"
+        ser_dev = self.mm.ser_device  # travels with Whisper (cpu on <12GB, else cuda)
         inputs = ext(seg.audio, sampling_rate=seg.sr, return_tensors="pt")
         iv = {k: v.to(ser_dev) for k, v in inputs.items()}
         out = model(**iv)

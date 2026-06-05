@@ -9,7 +9,7 @@ Strategy:
   - Vevo + UTMOS: prefetched into their respective cache dirs.
 
 Run from backend/:
-    $env:HF_HOME = "D:\\designathon_2\\backend\\.hf_cache"
+    $env:HF_HOME = "D:\\AccentShift\\backend\\.hf_cache"
     uv run python scripts/download_models.py
 """
 from __future__ import annotations

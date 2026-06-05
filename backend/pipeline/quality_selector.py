@@ -41,7 +41,7 @@ class QualitySelector:
               source_emotion: EmotionVec, source_text: str) -> tuple[float, dict]:
         cand_seg = Segment(audio=cand.wav, start_s=0.0, end_s=0.0, sr=cand.sr)
         out_emotion = self.fe.emotion(cand_seg)
-        emo_sim = _cosine(source_emotion.to_array(), out_emotion.to_array())
+        emo_sim = _cosine(source_emotion.to_centered_array(), out_emotion.to_centered_array())
         out_text, _ = self.fe.transcribe(cand_seg)
         wer = min(jiwer.wer(source_text, out_text or " "), 1.0) if source_text.strip() else 1.0
         mos = self._utmos(cand.wav, cand.sr)

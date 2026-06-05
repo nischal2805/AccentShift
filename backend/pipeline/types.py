@@ -25,6 +25,15 @@ class EmotionVec:
     def to_array(self) -> np.ndarray:
         return np.array([self.valence, self.arousal, self.dominance], dtype=np.float64)
 
+    def to_centered_array(self) -> np.ndarray:
+        """V/A/D centered on the neutral midpoint (audeering MSP-dim outputs ~[0,1]).
+
+        Cosine similarity on the raw all-positive vectors sits ~0.95 for any pair, so it
+        cannot discriminate emotions. Subtracting the 0.5 neutral point restores direction
+        so cosine actually measures emotional difference.
+        """
+        return self.to_array() - 0.5
+
 
 @dataclass
 class ProsodyFeatures:
