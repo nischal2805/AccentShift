@@ -91,8 +91,8 @@ def _check_prereqs():
 def _inject_seed_vc():
     if str(SEED_VC) not in sys.path:
         sys.path.insert(0, str(SEED_VC))
-    # Seed-VC reads its configs relative to its own repo root
-    os.chdir(SEED_VC)
+    # Do NOT chdir — keep CWD at backend/ so Trainer saves runs/ under backend/runs/.
+    # Pass absolute config_path to Trainer instead of relying on CWD.
 
 
 @click.command()
@@ -211,6 +211,8 @@ def main(accent, data_dir, run_name, steps, batch_size, save_every, num_workers,
     from train_v2 import Trainer  # type: ignore[import]
     log.info("Seed-VC Trainer imported OK")
 
+    abs_config = str(SEED_VC / SEED_VC_TRAIN_CONFIG)
+    abs_run_dir = str(ROOT / "runs" / run_name)
     stop_event = threading.Event()
     if tg:
         watcher = threading.Thread(
@@ -223,11 +225,11 @@ def main(accent, data_dir, run_name, steps, batch_size, save_every, num_workers,
         log.info("Telegram watcher started (heartbeat every %ds)", notify_every)
 
     trainer = Trainer(
-        config_path=SEED_VC_TRAIN_CONFIG,
+        config_path=abs_config,
         pretrained_cfm_ckpt_path=pretrained_cfm,
         pretrained_ar_ckpt_path=pretrained_ar,
         data_dir=str(data_path),
-        run_name=run_name,
+        run_name=abs_run_dir,
         batch_size=batch_size,
         num_workers=num_workers,
         steps=steps,
