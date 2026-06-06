@@ -36,6 +36,32 @@ class EmotionVec:
 
 
 @dataclass
+class EmotionFrame:
+    """Emotion vector at a specific time offset (seconds from segment start)."""
+    t: float
+    vec: EmotionVec
+
+
+@dataclass
+class EmotionTrajectory:
+    """Temporal sequence of emotion frames across an audio segment."""
+    frames: list  # list[EmotionFrame]
+    sr: int
+
+    def at(self, t: float) -> EmotionVec:
+        """Nearest-frame lookup."""
+        if not self.frames:
+            return EmotionVec(0.5, 0.5, 0.5)
+        best = min(self.frames, key=lambda f: abs(f.t - t))
+        return best.vec
+
+    def to_array(self) -> np.ndarray:
+        """Shape (T, 3) — V/A/D per frame."""
+        return np.array([[f.vec.valence, f.vec.arousal, f.vec.dominance]
+                         for f in self.frames], dtype=np.float32)
+
+
+@dataclass
 class ProsodyFeatures:
     f0: np.ndarray             # float64
     timeaxis: np.ndarray

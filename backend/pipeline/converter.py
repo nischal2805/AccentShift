@@ -72,11 +72,16 @@ class SeedVCBackend(ConverterBackend):
         self._torch = torch
         if str(self.repo) not in sys.path:
             sys.path.insert(0, str(self.repo))
+        # Resolve checkpoint paths to absolute before chdir so torch.load finds them
+        cfm_raw = self.cfg["cfm_checkpoint_path"]
+        cfm_abs = str((ROOT / cfm_raw).resolve()) if cfm_raw else None
+        ar_raw = self.cfg["ar_checkpoint_path"]
+        ar_abs = str((ROOT / ar_raw).resolve()) if ar_raw else None
         with _chdir(self.repo):  # load_v2_models reads relative configs/v2/vc_wrapper.yaml
             from inference_v2 import load_v2_models
             args = SimpleNamespace(
-                ar_checkpoint_path=self.cfg["ar_checkpoint_path"],
-                cfm_checkpoint_path=self.cfg["cfm_checkpoint_path"],
+                ar_checkpoint_path=ar_abs,
+                cfm_checkpoint_path=cfm_abs,
                 compile=self.cfg["compile"],
             )
             self._wrapper = load_v2_models(args)
@@ -95,7 +100,7 @@ class SeedVCBackend(ConverterBackend):
                 target_audio_path=ref_abs,
                 diffusion_steps=self.cfg["diffusion_steps"],
                 length_adjust=self.cfg["length_adjust"],
-                intelligibility_cfg_rate=self.cfg["intelligibility_cfg_rate"],
+                intelligebility_cfg_rate=self.cfg["intelligibility_cfg_rate"],
                 similarity_cfg_rate=self.cfg["similarity_cfg_rate"],
                 top_p=self.cfg["top_p"],
                 temperature=self.cfg["temperature"],

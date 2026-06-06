@@ -9,7 +9,7 @@ vad:
   min_silence_ms: 100
 
 models:
-  whisper: "openai/whisper-large-v3"
+  whisper: "openai/whisper-small"
   ser: "audeering/wav2vec2-large-robust-12-ft-emotion-msp-dim"
   utmos_hub: "sarulab-speech/UTMOS22"
   ecapa: "speechbrain/spkrec-ecapa-voxceleb"
@@ -28,12 +28,12 @@ seed_vc:
   repetition_penalty: 1.0
   ar_checkpoint_path: null      # null = auto-download from HF (Plachta/Seed-VC)
                                 # after finetune: set to checkpoints/seedvc_finetuned/<accent>/AR_epoch_*.pth
-  cfm_checkpoint_path: null     # after finetune: set to checkpoints/seedvc_finetuned/<accent>/CFM_epoch_*.pth
+  cfm_checkpoint_path: "checkpoints/seedvc_finetuned/all_ft/CFM_epoch_00016_step_14000.pth"     # after finetune: set to checkpoints/seedvc_finetuned/<accent>/CFM_epoch_*.pth
   compile: false
 
 vevo:
   repo_dir: "third_party/Amphion"
-  enabled: true
+  enabled: false
   device: "cpu"                 # 8GB card: Vevo on CPU
   flow_matching_steps: 32
   hf_repo: "amphion/Vevo"
@@ -42,7 +42,7 @@ vevo:
 devices:
   main: "cuda"
   vram_gb_threshold: 10         # below this, Vevo forced to CPU
-  whisper_vram_gb_threshold: 12 # below this, Whisper+SER forced to CPU (saves VRAM for Seed-VC on 8GB cards; GPU droplets with 24GB+ run everything on CUDA)
+  whisper_vram_gb_threshold: 4  # below this, Whisper+SER forced to CPU (4 = whisper-small on 8GB RTX 4060)
 
 quality:
   emotion_weight: 0.4
@@ -53,6 +53,10 @@ emotion_correction:
   threshold: 0.85
   f0_scale_clip: [0.8, 1.2]
   energy_scale_clip: [0.7, 1.3]
+
+emotion_encoder:
+  mode: "chunked_ser"     # "chunked_ser" (no extra model) | "emformer" (torchaudio RNNT)
+  smooth_sigma: 5         # Gaussian smoothing frames for per-frame alpha/scale curves
 
 postprocess:
   crossfade_ms: 30
@@ -68,3 +72,5 @@ accents:
   - { key: "japanese_english", label: "Japanese-accented English" }
   - { key: "british_english",  label: "British English" }
   - { key: "american_english", label: "American English" }
+  - { key: "korean_english",   label: "Korean-accented English" }
+  - { key: "arabic_english",   label: "Arabic-accented English" }

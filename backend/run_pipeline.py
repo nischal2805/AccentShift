@@ -26,6 +26,7 @@ import yaml
 from pipeline.model_manager import ModelManager
 from pipeline.preprocessor import Preprocessor, load_audio
 from pipeline.feature_extractor import FeatureExtractor
+from pipeline.emotion_encoder import EmotionEncoder
 from pipeline.converter import SeedVCBackend, VevoBackend, ConverterBackend
 from pipeline.quality_selector import QualitySelector
 from pipeline.emotion_corrector import EmotionCorrector
@@ -68,6 +69,8 @@ def main(input_path, target_accent, output_path, metrics_out, config_path):
     mm = ModelManager.get(config_path)
     pre = Preprocessor(cfg)
     fe = FeatureExtractor(mm)
+    ee_mode = cfg.get("emotion_encoder", {}).get("mode", "chunked_ser")
+    ee = EmotionEncoder(mm, mode=ee_mode)
     qs = QualitySelector(cfg, fe, mm)
     ec = EmotionCorrector(cfg)
     post = Postprocessor(cfg)
@@ -81,6 +84,7 @@ def main(input_path, target_accent, output_path, metrics_out, config_path):
     for i, seg in enumerate(segments):
         text, _ = fe.transcribe(seg)
         src_emotion = fe.emotion(seg)
+        src_trajectory = ee.encode(seg.audio, seg.sr)
         prosody = fe.prosody(seg, n_words=len(text.split()))
         candidates = [b.convert(seg, ref) for b in backends]
         result = qs.select(candidates, seg, src_emotion, text)
@@ -88,8 +92,12 @@ def main(input_path, target_accent, output_path, metrics_out, config_path):
             log.warning("Segment %d produced no candidates; skipping.", i)
             continue
         cand, score, meta = result
+        # Encode output emotion trajectory for temporal correction
+        out_trajectory = ee.encode(cand.wav, cand.sr)
         corrected = ec.correct(cand.wav, cand.sr, src_emotion,
-                               meta["emotion_output"], prosody)
+                               meta["emotion_output"], prosody,
+                               source_trajectory=src_trajectory,
+                               output_trajectory=out_trajectory)
         out_wavs.append(corrected)
         eo = meta["emotion_output"]
         seg_metrics.append({

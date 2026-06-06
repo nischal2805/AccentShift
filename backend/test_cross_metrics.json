@@ -1,0 +1,23 @@
+{
+  "processing_time_ms": 72561,
+  "n_segments": 1,
+  "emotion_similarity": 0.9998518693979915,
+  "wer": 1.0,
+  "mos_estimate": 3.5,
+  "segments": [
+    {
+      "segment": 0,
+      "chosen_backend": "seed_vc",
+      "score": 0.5399407477591966,
+      "emotion_sim": 0.9998518693979915,
+      "wer": 1.0,
+      "mos": 3.5,
+      "valence_source": -0.02718755416572094,
+      "valence_output": -0.019736511632800102,
+      "arousal_source": -0.009677750989794731,
+      "arousal_output": -0.023710880428552628,
+      "dominance_source": -0.0021064351312816143,
+      "dominance_output": -0.0029814960435032845
+    }
+  ]
+}
