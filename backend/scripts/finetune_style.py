@@ -149,8 +149,10 @@ def main(accent, data_dir, run_name, steps, batch_size, save_every, num_workers,
         import shutil, subprocess as _sp, time
         merged = ROOT / "data" / "finetune_all"
         sentinel = ROOT / "data" / "finetune_all.ready"
+        inprogress = ROOT / "data" / "finetune_all.inprogress"
         if is_main:
-            # Only rank 0 sets up the merged dir; other ranks wait for sentinel
+            # Write in-progress marker FIRST so non-zero ranks never trust a stale sentinel
+            inprogress.touch()
             sentinel.unlink(missing_ok=True)
             if merged.exists():
                 _sp.run(["rm", "-rf", str(merged)], check=True)
@@ -167,12 +169,22 @@ def main(accent, data_dir, run_name, steps, batch_size, save_every, num_workers,
                         shutil.copy2(wav, dst)
                     total += 1
             log.info("Staged %d WAVs (symlinks) from all accents -> %s", total, merged)
+            inprogress.unlink(missing_ok=True)
             sentinel.touch()
         else:
-            log.info("Rank %d waiting for rank 0 to stage WAVs...", int(os.environ.get("LOCAL_RANK", "1")))
-            while not sentinel.exists():
+            local_rank = int(os.environ.get("LOCAL_RANK", "1"))
+            log.info("Rank %d waiting for rank 0 to stage WAVs...", local_rank)
+            # First wait for rank 0 to signal it has started (inprogress appears)
+            # OR for sentinel to already be freshly written (inprogress already removed)
+            deadline = 30  # seconds to wait for rank 0 to start
+            for _ in range(deadline * 2):
+                if inprogress.exists() or (sentinel.exists() and not inprogress.exists()):
+                    break
                 time.sleep(0.5)
-            log.info("Rank %d: WAV staging done, proceeding", int(os.environ.get("LOCAL_RANK", "1")))
+            # Now wait for staging to complete (inprogress gone + sentinel present)
+            while inprogress.exists() or not sentinel.exists():
+                time.sleep(0.5)
+            log.info("Rank %d: WAV staging done, proceeding", local_rank)
         data_path = merged
     else:
         data_path = ft_root / accent
