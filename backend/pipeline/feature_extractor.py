@@ -38,7 +38,9 @@ class FeatureExtractor:
         iv = {k: v.to(ser_dev) for k, v in inputs.items()}
         out = model(**iv)
         logits = out.logits if hasattr(out, "logits") else out[1]
-        vals = logits.squeeze().float().cpu().numpy().reshape(-1)
+        # Model outputs raw regression logits, NOT [0,1].  Sigmoid maps to [0,1] so
+        # the downstream centering at 0.5 produces a meaningful [-0.5, 0.5] signal.
+        vals = torch.sigmoid(logits.squeeze().float()).cpu().numpy().reshape(-1)
         arousal, dominance, valence = float(vals[0]), float(vals[1]), float(vals[2])
         return EmotionVec(valence=valence, arousal=arousal, dominance=dominance)
 

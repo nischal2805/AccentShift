@@ -26,11 +26,12 @@ class EmotionVec:
         return np.array([self.valence, self.arousal, self.dominance], dtype=np.float64)
 
     def to_centered_array(self) -> np.ndarray:
-        """V/A/D centered on the neutral midpoint (audeering MSP-dim outputs ~[0,1]).
+        """Sigmoid-normalised [0,1] V/A/D centred at 0.5 → [-0.5, 0.5] range.
 
-        Cosine similarity on the raw all-positive vectors sits ~0.95 for any pair, so it
-        cannot discriminate emotions. Subtracting the 0.5 neutral point restores direction
-        so cosine actually measures emotional difference.
+        Sigmoid is applied in feature_extractor before constructing EmotionVec, so
+        values here are in [0,1] with neutral ≈ 0.5. Subtracting 0.5 gives a
+        direction vector where positive = above neutral, negative = below neutral.
+        Cosine / L2 on these vectors is meaningful for discrimination.
         """
         return self.to_array() - 0.5
 

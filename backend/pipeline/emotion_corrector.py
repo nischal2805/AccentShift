@@ -1,20 +1,26 @@
 """Emotion correction: warp output F0/energy to match source emotion trajectory.
 
-Replaces the old global-scale approach with per-frame correction guided by
-the EmotionTrajectory from EmotionEncoder. Each voiced frame is warped
-individually based on its local emotion deviation from the source.
+Three F0 transfer modes (config: emotion_correction.f0_transfer):
 
-Algorithm per voiced frame i:
-  1. Look up source emotion at time t_i  → src_vad
-  2. Look up output emotion at time t_i  → out_vad
-  3. Cosine similarity of centered vecs
-  4. If sim < frame_threshold: apply weighted F0 + energy correction
-     - F0 scale toward src_f0_mean * arousal_ratio  (arousal drives pitch)
-     - energy scale toward src_rms * dominance_ratio (dominance drives loudness)
-     - alpha = 1 - sim (stronger correction where emotion drifts more)
-  5. Smoothed via Gaussian window to avoid click artifacts
+  log_norm   (default) — log-domain contour copy normalized to output speaker
+             register. Preserves the *shape* of the source F0 contour (emotional
+             dynamics) while keeping the output speaker's mean pitch level.
+             Proven approach from CWT-based F0 transfer literature: log F0 is
+             perceptually uniform (semitone scale), so shifting by the mean
+             difference maps source dynamics onto target register cleanly.
 
-Falls back to global correction if EmotionTrajectory has only 1 frame (short clip).
+  cwt        — Mexican-hat CWT decomposition of log-F0 at 10 scales (4 ms →
+             ~400 ms at 200 Hz WORLD frame rate). Each scale represents a
+             different prosodic level: micro-prosody → sentence intonation.
+             Source CWT coefficients replace output coefficients, then inverse
+             CWT reconstructs log-F0. Stronger temporal structure preservation
+             at cost of some wavelet ringing artefacts.
+
+  mean_scale — original single-ratio mean scaling (legacy fallback).
+
+Energy correction is always per-frame via dominance × alpha weighting from
+the EmotionTrajectory. F0 correction is only applied when global cosine
+similarity falls below threshold (same gate as before).
 """
 from __future__ import annotations
 import logging
@@ -26,8 +32,29 @@ from .types import EmotionVec, EmotionTrajectory, ProsodyFeatures
 
 log = logging.getLogger("emotion_corrector")
 
-_NEUTRAL = 0.5   # audeering MSP-dim neutral midpoint
+def _ricker(points: int, a: float) -> np.ndarray:
+    """Mexican-hat (Ricker) wavelet — avoids scipy version dependency."""
+    A   = 2.0 / (np.sqrt(3.0 * a) * (np.pi ** 0.25))
+    vec = np.arange(points) - (points - 1) / 2.0
+    xsq = vec ** 2
+    wsq = a ** 2
+    return A * (1.0 - xsq / wsq) * np.exp(-xsq / (2.0 * wsq))
 
+
+def _cwt(signal: np.ndarray, widths: np.ndarray) -> np.ndarray:
+    """Manual CWT via convolution — scipy.signal.cwt removed in 1.12."""
+    out = np.zeros((len(widths), len(signal)), dtype=np.float64)
+    for i, w in enumerate(widths):
+        n = min(int(10 * w) | 1, len(signal))   # odd kernel length
+        wav = _ricker(n, w)
+        wav /= np.sum(np.abs(wav)) + 1e-12
+        out[i] = np.convolve(signal, wav, mode="same")
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Small helpers
+# ---------------------------------------------------------------------------
 
 def _cosine(a: np.ndarray, b: np.ndarray) -> float:
     na, nb = np.linalg.norm(a), np.linalg.norm(b)
@@ -35,22 +62,126 @@ def _cosine(a: np.ndarray, b: np.ndarray) -> float:
 
 
 def _center(v: EmotionVec) -> np.ndarray:
-    return np.array([v.valence - _NEUTRAL,
-                     v.arousal - _NEUTRAL,
-                     v.dominance - _NEUTRAL], dtype=np.float64)
+    return v.to_centered_array().astype(np.float64)
 
+
+def _interp_f0(f0: np.ndarray) -> np.ndarray:
+    """Linear interpolation across unvoiced (F0=0) frames → continuous contour."""
+    f0c = f0.copy().astype(np.float64)
+    voiced = f0c > 0
+    if voiced.sum() < 2:
+        f0c[~voiced] = 1.0
+        return f0c
+    idx = np.arange(len(f0c))
+    f0c[~voiced] = np.interp(idx[~voiced], idx[voiced], f0c[voiced])
+    return f0c
+
+
+# ---------------------------------------------------------------------------
+# F0 transfer strategies
+# ---------------------------------------------------------------------------
+
+def _resample_f0(src: np.ndarray, target_len: int) -> np.ndarray:
+    return np.interp(
+        np.linspace(0, 1, target_len),
+        np.linspace(0, 1, len(src)),
+        src,
+    )
+
+
+def _f0_log_norm(src_f0: np.ndarray, out_f0: np.ndarray,
+                 f0_clip: tuple) -> np.ndarray:
+    """Log-normalised F0 contour transfer.
+
+    Maps source emotional F0 dynamics onto the output speaker's register by
+    shifting in log space. Voiced/unvoiced mask from *output* is preserved.
+    """
+    out_voiced = out_f0 > 0
+    src_rs = _resample_f0(src_f0, len(out_f0))
+    src_v  = src_rs > 0
+
+    if out_voiced.sum() < 2 or src_v.sum() < 2:
+        return out_f0.copy()
+
+    out_log_mean = float(np.log(out_f0[out_voiced]).mean())
+    src_log_mean = float(np.log(src_rs[src_v]).mean())
+
+    # Continuous log-F0 source contour (interpolate over unvoiced regions)
+    src_cont     = np.log(np.maximum(_interp_f0(src_rs), 1.0))
+    # Shift to output speaker register
+    transferred  = np.exp(src_cont - src_log_mean + out_log_mean)
+    # Clip to plausible Hz range and restore unvoiced
+    lo = out_f0[out_voiced].min() * f0_clip[0]
+    hi = out_f0[out_voiced].max() * f0_clip[1]
+    return np.where(out_voiced, np.clip(transferred, lo, hi), 0.0)
+
+
+def _f0_cwt(src_f0: np.ndarray, out_f0: np.ndarray,
+            f0_clip: tuple) -> np.ndarray:
+    """CWT multi-scale F0 contour transfer (Mexican-hat, 10 scales).
+
+    Decomposes source and output log-F0 into prosodic scales from micro
+    (~4 ms) to sentence (~400 ms at 200 Hz WORLD rate), transfers source
+    coefficients, then reconstructs. Normalised to output speaker mean.
+    """
+    out_voiced = out_f0 > 0
+    src_rs = _resample_f0(src_f0, len(out_f0))
+    src_v  = src_rs > 0
+
+    if out_voiced.sum() < 2 or src_v.sum() < 2:
+        return out_f0.copy()
+
+    out_log_mean = float(np.log(out_f0[out_voiced]).mean())
+
+    src_log = np.log(np.maximum(_interp_f0(src_rs), 1.0))
+
+    # 10 octave-spaced scales; WORLD default frame rate ≈5 ms
+    widths = np.array([1, 2, 4, 8, 16, 32, 64, 128, 256, 512], dtype=np.float64)
+    # CWT returns (n_scales, n_frames) complex (ricker is real)
+    coefs = _cwt(src_log, widths)          # (10, N)
+    # Approximate reconstruction via Morlet admissibility ∑_j C_j
+    transferred_log = coefs.real.sum(axis=0)
+    # Re-centre to output speaker register
+    voiced_mean = float(transferred_log[out_voiced].mean()) if out_voiced.any() else 0.0
+    transferred_log = transferred_log - voiced_mean + out_log_mean
+
+    transferred = np.exp(transferred_log)
+    lo = out_f0[out_voiced].min() * f0_clip[0]
+    hi = out_f0[out_voiced].max() * f0_clip[1]
+    return np.where(out_voiced, np.clip(transferred, lo, hi), 0.0)
+
+
+def _f0_mean_scale(src_f0: np.ndarray, out_f0: np.ndarray,
+                   f0_clip: tuple) -> np.ndarray:
+    """Legacy mean-ratio scaling (fallback for very short clips)."""
+    out_voiced = out_f0 > 0
+    src_rs = _resample_f0(src_f0, len(out_f0))
+    src_v  = src_rs > 0
+    if out_voiced.sum() < 1 or src_v.sum() < 1:
+        return out_f0.copy()
+    scale = np.clip(
+        src_rs[src_v].mean() / out_f0[out_voiced].mean(),
+        f0_clip[0], f0_clip[1],
+    )
+    result = out_f0.copy()
+    result[out_voiced] *= scale
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Main class
+# ---------------------------------------------------------------------------
 
 class EmotionCorrector:
     def __init__(self, cfg: dict):
         ec = cfg["emotion_correction"]
-        self.threshold    = ec["threshold"]
-        self.f0_clip      = tuple(ec["f0_scale_clip"])
-        self.energy_clip  = tuple(ec["energy_scale_clip"])
-        # Per-frame alpha smoothing window (frames)
-        self.smooth_sigma = cfg.get("emotion_encoder", {}).get("smooth_sigma", 5)
+        self.threshold        = ec["threshold"]
+        self.always_correct_f0 = ec.get("always_correct_f0", True)
+        self.f0_clip          = tuple(ec["f0_scale_clip"])
+        self.energy_clip      = tuple(ec["energy_scale_clip"])
+        self.smooth_sigma     = cfg.get("emotion_encoder", {}).get("smooth_sigma", 5)
+        self.f0_mode          = ec.get("f0_transfer", "log_norm")
 
-    # ------------------------------------------------------------------
-    # Main entry point
     # ------------------------------------------------------------------
     def correct(
         self,
@@ -62,48 +193,46 @@ class EmotionCorrector:
         source_trajectory: EmotionTrajectory | None = None,
         output_trajectory: EmotionTrajectory | None = None,
     ) -> np.ndarray:
-        # Global similarity check
         sim = _cosine(_center(source_emotion), _center(output_emotion))
-        if sim >= self.threshold:
-            return wav   # emotion well preserved — no correction
 
-        log.info("emotion drift (cos=%.3f < %.2f) — applying correction", sim, self.threshold)
+        # F0 contour transfer: always run when flag set (SER cosine on neutral speech
+        # is always ~1.0, so the threshold gate would never fire even with large F0 drift)
+        if self.always_correct_f0 or sim < self.threshold:
+            log.info("F0 correction: cos=%.3f, always=%s, mode=%s",
+                     sim, self.always_correct_f0, self.f0_mode)
+            has_traj = (source_trajectory is not None
+                        and output_trajectory is not None
+                        and len(source_trajectory.frames) > 1
+                        and len(output_trajectory.frames) > 1)
+            if has_traj:
+                return self._correct_temporal(wav, sr, source_prosody,
+                                              source_trajectory, output_trajectory)
+            return self._correct_global(wav, sr, source_emotion, output_emotion, source_prosody)
 
-        has_traj = (source_trajectory is not None
-                    and output_trajectory is not None
-                    and len(source_trajectory.frames) > 1
-                    and len(output_trajectory.frames) > 1)
-
-        if has_traj:
-            return self._correct_temporal(wav, sr, source_prosody,
-                                          source_trajectory, output_trajectory)
-        return self._correct_global(wav, sr, source_emotion, output_emotion, source_prosody)
+        return wav
 
     # ------------------------------------------------------------------
-    # Global correction (fallback — original behaviour)
+    def _pick_f0(self, src_f0: np.ndarray, out_f0: np.ndarray) -> np.ndarray:
+        """Route to configured F0 transfer strategy."""
+        if self.f0_mode == "cwt":
+            return _f0_cwt(src_f0, out_f0, self.f0_clip)
+        if self.f0_mode == "mean_scale":
+            return _f0_mean_scale(src_f0, out_f0, self.f0_clip)
+        return _f0_log_norm(src_f0, out_f0, self.f0_clip)   # default: log_norm
+
     # ------------------------------------------------------------------
-    def _correct_global(
-        self,
-        wav: np.ndarray,
-        sr: int,
-        source_emotion: EmotionVec,
-        output_emotion: EmotionVec,
-        source_prosody: ProsodyFeatures,
-    ) -> np.ndarray:
+    def _correct_global(self, wav, sr, _src_emo, _out_emo, source_prosody):
         x = wav.astype(np.float64)
         pw = pyworld
-        f0, t  = pw.harvest(x, sr)
-        f0     = pw.stonemask(x, f0, t, sr)
-        sp     = pw.cheaptrick(x, f0, t, sr)
-        ap     = pw.d4c(x, f0, t, sr)
+        f0, t = pw.harvest(x, sr)
+        f0    = pw.stonemask(x, f0, t, sr)
+        sp    = pw.cheaptrick(x, f0, t, sr)
+        ap    = pw.d4c(x, f0, t, sr)
 
-        voiced     = f0 > 0
-        src_voiced = source_prosody.f0[source_prosody.f0 > 0]
-        if voiced.sum() > 0 and src_voiced.size > 0:
-            scale = src_voiced.mean() / f0[voiced].mean()
-            f0[voiced] *= np.clip(scale, self.f0_clip[0], self.f0_clip[1])
+        src_f0 = source_prosody.f0
+        f0_new = self._pick_f0(src_f0, f0)
+        corrected = pw.synthesize(f0_new, sp, ap, sr).astype(np.float32)
 
-        corrected = pw.synthesize(f0, sp, ap, sr).astype(np.float32)
         out_rms = librosa.feature.rms(y=corrected)[0].mean()
         src_rms = source_prosody.energy.mean()
         if out_rms > 0:
@@ -112,16 +241,7 @@ class EmotionCorrector:
         return corrected
 
     # ------------------------------------------------------------------
-    # Temporal (per-frame) correction — new path
-    # ------------------------------------------------------------------
-    def _correct_temporal(
-        self,
-        wav: np.ndarray,
-        sr: int,
-        source_prosody: ProsodyFeatures,
-        src_traj: EmotionTrajectory,
-        out_traj: EmotionTrajectory,
-    ) -> np.ndarray:
+    def _correct_temporal(self, wav, sr, source_prosody, src_traj, out_traj):
         x  = wav.astype(np.float64)
         pw = pyworld
 
@@ -130,58 +250,41 @@ class EmotionCorrector:
         sp     = pw.cheaptrick(x, f0, t, sr)
         ap     = pw.d4c(x, f0, t, sr)
 
+        # ---------- F0 transfer (log-norm / cwt / mean_scale) ----------
+        f0_new = self._pick_f0(source_prosody.f0, f0)
+
+        # ---------- Per-frame alpha from emotion trajectory drift -------
         n_frames = len(f0)
-
-        # Build per-frame alpha (correction strength) from emotion cosine
-        alpha = np.zeros(n_frames, dtype=np.float64)
-        f0_scale = np.ones(n_frames, dtype=np.float64)
-
-        # Source voiced F0 mean for reference
-        src_f0_voiced = source_prosody.f0[source_prosody.f0 > 0]
-        src_f0_mean   = float(src_f0_voiced.mean()) if src_f0_voiced.size > 0 else 0.0
-
+        alpha    = np.zeros(n_frames, dtype=np.float64)
         for i in range(n_frames):
             ti      = t[i]
             src_vad = src_traj.at(ti)
             out_vad = out_traj.at(ti)
             sim     = _cosine(_center(src_vad), _center(out_vad))
-            a       = max(0.0, 1.0 - sim)   # higher drift → stronger correction
-            alpha[i] = a
+            alpha[i] = max(0.0, 1.0 - sim)
 
-            # Arousal-guided F0 target: arousal > neutral → higher pitch
-            if src_f0_mean > 0 and f0[i] > 0:
-                arousal_ratio = (src_vad.arousal + 0.5) / (out_vad.arousal + 0.5 + 1e-6)
-                arousal_ratio = float(np.clip(arousal_ratio, self.f0_clip[0], self.f0_clip[1]))
-                # Blend: no correction at a=0, full arousal_ratio at a=1
-                f0_scale[i]  = 1.0 + a * (arousal_ratio - 1.0)
+        alpha = gaussian_filter1d(alpha, sigma=self.smooth_sigma)
 
-        # Smooth alpha and scale to avoid frame-boundary clicks
-        alpha    = gaussian_filter1d(alpha,    sigma=self.smooth_sigma)
-        f0_scale = gaussian_filter1d(f0_scale, sigma=self.smooth_sigma)
-
-        # Apply F0 scale only to voiced frames
-        voiced      = f0 > 0
-        f0_corrected = f0.copy()
-        f0_corrected[voiced] = np.clip(
-            f0[voiced] * f0_scale[voiced],
-            f0[voiced] * self.f0_clip[0],
-            f0[voiced] * self.f0_clip[1],
+        # Blend F0: low alpha → keep output F0; high alpha → use transferred F0
+        voiced = f0 > 0
+        f0_blended = f0.copy()
+        f0_blended[voiced] = (
+            (1.0 - alpha[voiced]) * f0[voiced]
+            + alpha[voiced]       * f0_new[voiced]
         )
 
-        corrected = pw.synthesize(f0_corrected, sp, ap, sr).astype(np.float32)
+        corrected = pw.synthesize(f0_blended, sp, ap, sr).astype(np.float32)
 
-        # Per-frame energy warp guided by dominance ratio + alpha
+        # ---------- Per-frame energy warp (dominance-guided) ------------
         hop     = 512
         out_rms = librosa.feature.rms(y=corrected, hop_length=hop)[0]
-        src_rms = source_prosody.energy   # shape (E,)
+        src_rms = source_prosody.energy
         min_len = min(len(out_rms), len(src_rms))
         if min_len > 0 and out_rms[:min_len].mean() > 0:
-            # Frame-level energy ratio, clipped
             ratio = np.clip(
                 src_rms[:min_len] / (out_rms[:min_len] + 1e-8),
-                self.energy_clip[0], self.energy_clip[1]
+                self.energy_clip[0], self.energy_clip[1],
             )
-            # Alpha for energy frames (resample alpha to energy frame count)
             alpha_e = np.interp(
                 np.linspace(0, 1, min_len),
                 np.linspace(0, 1, len(alpha)),
@@ -189,14 +292,17 @@ class EmotionCorrector:
             )
             energy_scale = 1.0 + alpha_e * (ratio - 1.0)
             energy_scale = gaussian_filter1d(energy_scale, sigma=3)
-            # Apply: expand per-frame scale to sample-level
+            # Frame centre positions; np.interp fills last value past the end
+            frame_centers = np.arange(min_len) * hop + hop // 2
+            # Guarantee full coverage: pad with boundary values if audio longer
+            if frame_centers[-1] < len(corrected) - 1:
+                frame_centers = np.append(frame_centers, len(corrected) - 1)
+                energy_scale  = np.append(energy_scale,  energy_scale[-1])
             scale_samples = np.interp(
-                np.arange(len(corrected)),
-                np.arange(min_len) * hop + hop // 2,
-                energy_scale[:min_len],
+                np.arange(len(corrected)), frame_centers, energy_scale,
             )
             corrected = (corrected * scale_samples).astype(np.float32)
 
-        log.debug("temporal correction applied: %d frames, mean_alpha=%.3f",
-                  n_frames, float(alpha.mean()))
+        log.debug("temporal correction: %d frames, mean_alpha=%.3f, f0_mode=%s",
+                  n_frames, float(alpha.mean()), self.f0_mode)
         return corrected

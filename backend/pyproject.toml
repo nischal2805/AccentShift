@@ -35,14 +35,23 @@ dependencies = [
     "uvicorn[standard]>=0.29",
     "python-multipart>=0.0.9",
     "matplotlib>=3.10.9",
+    # CUDA torch — index override keeps uv from swapping in CPU builds on sync
+    "torch==2.6.0",
+    "torchaudio==2.6.0",
 ]
 
 [project.optional-dependencies]
-# torch installed separately via CUDA index (see SETUP.md)
 dev = ["pytest>=8.0"]
 
 [tool.uv]
-# torch/torchaudio pinned + CUDA index handled in SETUP.md, not here
+[tool.uv.sources]
+torch = { index = "pytorch-cu118" }
+torchaudio = { index = "pytorch-cu118" }
+
+[[tool.uv.index]]
+name = "pytorch-cu118"
+url = "https://download.pytorch.org/whl/cu118"
+explicit = true
 
 [build-system]
 requires = ["hatchling"]
