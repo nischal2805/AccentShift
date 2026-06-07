@@ -43,12 +43,12 @@ ROOT = Path(__file__).resolve().parent
 _NEUTRAL = EmotionVec(0.5, 0.5, 0.5)
 
 
-def pick_reference(cfg: dict, accent: str) -> str:
-    """Concatenate all reference WAVs for the target accent and return a temp path.
+def build_reference(cfg: dict, accent: str) -> tuple[str, bool]:
+    """Concatenate all reference WAVs for the target accent into a temp file.
 
-    Using all clips (not just the longest) gives Seed-VC/Vevo more accent exposure
-    → more stable accent embedding, especially for accents with only short clips.
-    Clips are resampled to pipeline SR and separated by 0.3s of silence.
+    Returns (temp_path, is_temp) where is_temp=True means caller must delete the file.
+    Clips are resampled to pipeline SR and joined with 0.3s silence.
+    Raises click.BadParameter with a clear message if the reference dir is empty.
     """
     ref_dir = ROOT / cfg["paths"]["references"] / accent
     wavs = sorted(
@@ -57,7 +57,16 @@ def pick_reference(cfg: dict, accent: str) -> str:
         reverse=True,
     )
     if not wavs:
-        raise FileNotFoundError(f"No reference clips in {ref_dir}. Add 5-10s WAVs.")
+        raise click.BadParameter(
+            f"No reference WAVs found in {ref_dir}\n"
+            f"Add 3-10 WAV files (5-15s each) of a native {accent} speaker.\n"
+            f"L2-Arctic speakers: indian=ASI, chinese=BWC, arabic=ZHAA, korean=HJK"
+        )
+
+    # Single clip: return direct path, no temp file needed
+    if len(wavs) == 1:
+        log.info("reference for %s: 1 clip → %s", accent, wavs[0].name)
+        return str(wavs[0]), False
 
     sr = cfg["audio"]["sample_rate"]
     silence = np.zeros(int(0.3 * sr), dtype=np.float32)
@@ -79,7 +88,7 @@ def pick_reference(cfg: dict, accent: str) -> str:
     f = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
     sf.write(f.name, combined, sr)
     f.close()
-    return f.name
+    return f.name, True
 
 
 def build_backends(cfg: dict, mm: ModelManager):
@@ -114,7 +123,7 @@ def main(input_path, target_accent, output_path, metrics_out, reference_text, co
     ec  = EmotionCorrector(cfg)
     post = Postprocessor(cfg)
     backends = build_backends(cfg, mm)
-    ref = pick_reference(cfg, target_accent)
+    ref, ref_is_temp = build_reference(cfg, target_accent)
 
     audio    = load_audio(input_path, sr=cfg["audio"]["sample_rate"])
     segments = pre.segment(audio)
@@ -122,45 +131,49 @@ def main(input_path, target_accent, output_path, metrics_out, reference_text, co
     ref_text_override = reference_text.strip() if reference_text else None
 
     out_wavs, seg_metrics = [], []
-    for i, seg in enumerate(segments):
-        # Source transcript: ground-truth if provided, else Whisper on source audio
-        if ref_text_override:
-            text = ref_text_override
-        else:
-            text, _ = fe.transcribe(seg)
+    try:
+        for i, seg in enumerate(segments):
+            # Source transcript: ground-truth if provided, else Whisper on source audio
+            if ref_text_override:
+                text = ref_text_override
+            else:
+                text, _ = fe.transcribe(seg)
 
-        # Source prosody: F0 contour + energy envelope — used for correction and scoring
-        prosody = fe.prosody(seg, n_words=len(text.split()))
+            # Source prosody: F0 contour + energy envelope — used for correction and scoring
+            prosody = fe.prosody(seg, n_words=len(text.split()))
 
-        # Convert with all configured backends
-        candidates = [b.convert(seg, ref) for b in backends]
+            # Convert with all configured backends
+            candidates = [b.convert(seg, ref) for b in backends]
 
-        # Score by F0 correlation (prosody/emotion proxy), WER, proxy MOS
-        result = qs.select(candidates, seg, prosody, text)
-        if result is None:
-            log.warning("Segment %d produced no candidates; skipping.", i)
-            continue
-        cand, score, meta = result
+            # Score by F0 correlation (prosody/emotion proxy), WER, proxy MOS
+            result = qs.select(candidates, seg, prosody, text)
+            if result is None:
+                log.warning("Segment %d produced no candidates; skipping.", i)
+                continue
+            cand, score, meta = result
 
-        # Restore source F0 contour + energy envelope onto converted audio
-        # _NEUTRAL dummies: EmotionCorrector ignores src/out emotion when
-        # always_correct_f0=True (the cosine gate is bypassed).
-        corrected = ec.correct(
-            cand.wav, cand.sr,
-            _NEUTRAL, _NEUTRAL,
-            prosody,
-        )
+            # Restore source F0 contour + energy envelope onto converted audio
+            # _NEUTRAL dummies: EmotionCorrector ignores src/out emotion when
+            # always_correct_f0=True (the cosine gate is bypassed).
+            corrected = ec.correct(
+                cand.wav, cand.sr,
+                _NEUTRAL, _NEUTRAL,
+                prosody,
+            )
 
-        out_wavs.append(corrected)
-        seg_metrics.append({
-            "segment":        i,
-            "chosen_backend": cand.name,
-            "score":          score,
-            "f0_corr":        meta["f0_corr"],
-            "wer":            meta["wer"],
-            "mos":            meta["mos"],
-            "transcript":     meta["transcript"],
-        })
+            out_wavs.append(corrected)
+            seg_metrics.append({
+                "segment":        i,
+                "chosen_backend": cand.name,
+                "score":          score,
+                "f0_corr":        meta["f0_corr"],
+                "wer":            meta["wer"],
+                "mos":            meta["mos"],
+                "transcript":     meta["transcript"],
+            })
+    finally:
+        if ref_is_temp:
+            Path(ref).unlink(missing_ok=True)
 
     final = post.assemble(out_wavs)
     final = post.loudness_normalize(final)
