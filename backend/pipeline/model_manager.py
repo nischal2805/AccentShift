@@ -46,7 +46,8 @@ class ModelManager:
         log.info("device=%s whisper/ser_device=%s vevo_device=%s",
                  self.device, self.whisper_device, self.vevo_device)
         self._load_whisper()
-        self._load_ser()
+        self._ser = None
+        self._ser_extractor = None
         self._ecapa = None
         self._utmos = None
 
@@ -80,14 +81,27 @@ class ModelManager:
         _w.to(self.whisper_device)  # type: ignore[arg-type]
         self.whisper = _w.eval()
 
-    def _load_ser(self) -> None:
-        from transformers import AutoFeatureExtractor, AutoModelForAudioClassification
-        src = _src(self.cfg["models"]["ser"], self.ckpt_root)
-        log.info("loading SER from %s on %s", src, self.ser_device)
-        self.ser_extractor = AutoFeatureExtractor.from_pretrained(src)
-        _s = AutoModelForAudioClassification.from_pretrained(src)
-        _s.to(self.ser_device)  # type: ignore[arg-type]
-        self.ser = _s.eval()
+    def load_ser(self):
+        """Lazy-load SER model. Not called in the main pipeline (EmotionEncoder removed)."""
+        if self._ser is None:
+            from transformers import AutoFeatureExtractor, AutoModelForAudioClassification
+            src = _src(self.cfg["models"]["ser"], self.ckpt_root)
+            log.info("loading SER from %s on %s", src, self.ser_device)
+            self._ser_extractor = AutoFeatureExtractor.from_pretrained(src)
+            _s = AutoModelForAudioClassification.from_pretrained(src)
+            _s.to(self.ser_device)  # type: ignore[arg-type]
+            self._ser = _s.eval()
+        return self._ser
+
+    @property
+    def ser(self):
+        return self.load_ser()
+
+    @property
+    def ser_extractor(self):
+        if self._ser_extractor is None:
+            self.load_ser()
+        return self._ser_extractor
 
     def load_ecapa(self):
         if self._ecapa is None:
