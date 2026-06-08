@@ -693,15 +693,16 @@
   let transcript = '';
   let interimTranscript = '';
 
-  // ─── Emotion definitions ──────────────────────────────────────────
+  // ─── Emotion definitions — prosody tuned for clear audible difference ──────
   const EMOTIONS = [
-    { id: 'neutral',  label: 'Neutral',  emoji: '😐', rate: 0.92, pitch: 1.0, volume: 1.0,  color: '#64748b' },
-    { id: 'happy',   label: 'Happy',    emoji: '😊', rate: 1.10, pitch: 1.25, volume: 1.0, color: '#f59e0b' },
-    { id: 'excited', label: 'Excited',  emoji: '🤩', rate: 1.30, pitch: 1.45, volume: 1.0, color: '#ef4444' },
-    { id: 'sad',     label: 'Sad',      emoji: '😢', rate: 0.78, pitch: 0.80, volume: 0.75,color: '#3b82f6' },
-    { id: 'angry',   label: 'Angry',    emoji: '😠', rate: 1.20, pitch: 0.85, volume: 1.0, color: '#dc2626' },
-    { id: 'calm',    label: 'Calm',     emoji: '😌', rate: 0.82, pitch: 1.0,  volume: 0.85,color: '#10b981' },
-    { id: 'fearful', label: 'Fearful',  emoji: '😨', rate: 1.18, pitch: 1.35, volume: 0.88,color: '#8b5cf6' },
+    // id         label       emoji   rate   pitch  volume  color
+    { id:'neutral',  label:'Neutral',  emoji:'😐', rate:1.00, pitch:1.00, volume:1.0,  color:'#64748b' },
+    { id:'happy',   label:'Happy',    emoji:'😊', rate:1.20, pitch:1.70, volume:1.0,  color:'#f59e0b' },
+    { id:'excited', label:'Excited',  emoji:'🤩', rate:1.55, pitch:1.90, volume:1.0,  color:'#ef4444' },
+    { id:'sad',     label:'Sad',      emoji:'😢', rate:0.60, pitch:0.55, volume:0.70, color:'#3b82f6' },
+    { id:'angry',   label:'Angry',    emoji:'😠', rate:1.45, pitch:0.65, volume:1.0,  color:'#dc2626' },
+    { id:'calm',    label:'Calm',     emoji:'😌', rate:0.72, pitch:1.00, volume:0.80, color:'#10b981' },
+    { id:'fearful', label:'Fearful',  emoji:'😨', rate:1.40, pitch:1.85, volume:0.82, color:'#8b5cf6' },
   ];
 
   let selectedEmotion = EMOTIONS[0]; // default neutral
@@ -719,19 +720,33 @@
 
   // ─── Call Hugging Face Inference API ─────────────────────────────
   // Model: j-hartmann/emotion-english-distilroberta-base
-  // Outputs anger | disgust | fear | joy | neutral | sadness | surprise
-  async function detectEmotionAI(text) {
+  // Handles HF "model currently loading" JSON gracefully
+  async function detectEmotionAI(text, attempt) {
+    attempt = attempt || 1;
     const res = await fetch(
       'https://api-inference.huggingface.co/models/j-hartmann/emotion-english-distilroberta-base',
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ inputs: text.trim().substring(0, 512) }),
+        body: JSON.stringify({ inputs: text.trim().substring(0, 512), wait_for_model: true }),
       }
     );
-    if (!res.ok) throw new Error('HF API error ' + res.status);
     const data = await res.json();
-    // data = [[{label, score}, ...]]
+
+    // HF returns {error, estimated_time} when model is cold-starting
+    if (data.error && data.estimated_time !== undefined) {
+      const waitMs = Math.ceil(data.estimated_time + 5) * 1000;
+      const waitSec = Math.ceil((waitMs) / 1000);
+      document.getElementById('emoStatusText').textContent =
+        `⏳ AI model warming up… ready in ~${waitSec}s (attempt ${attempt})`;
+      document.getElementById('emoSpinner').style.display = 'inline-block';
+      await new Promise(r => setTimeout(r, waitMs));
+      return detectEmotionAI(text, attempt + 1);
+    }
+
+    if (!res.ok || data.error) throw new Error(data.error || 'HF API error ' + res.status);
+
+    // Successful: [[{label, score}, ...]]
     const results = Array.isArray(data[0]) ? data[0] : data;
     results.sort((a, b) => b.score - a.score);
     return { hfLabel: results[0].label.toLowerCase(), score: results[0].score };
