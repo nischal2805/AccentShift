@@ -175,12 +175,13 @@ def _f0_mean_scale(src_f0: np.ndarray, out_f0: np.ndarray,
 class EmotionCorrector:
     def __init__(self, cfg: dict):
         ec = cfg["emotion_correction"]
-        self.threshold        = ec["threshold"]
-        self.always_correct_f0 = ec.get("always_correct_f0", True)
-        self.f0_clip          = tuple(ec["f0_scale_clip"])
-        self.energy_clip      = tuple(ec["energy_scale_clip"])
-        self.smooth_sigma     = cfg.get("emotion_encoder", {}).get("smooth_sigma", 5)
-        self.f0_mode          = ec.get("f0_transfer", "log_norm")
+        self.threshold         = ec["threshold"]
+        self.always_correct_f0 = ec.get("always_correct_f0", False)
+        self.f0_corr_threshold = ec.get("f0_corr_threshold", 0.3)
+        self.f0_clip           = tuple(ec["f0_scale_clip"])
+        self.energy_clip       = tuple(ec["energy_scale_clip"])
+        self.smooth_sigma      = cfg.get("emotion_encoder", {}).get("smooth_sigma", 5)
+        self.f0_mode           = ec.get("f0_transfer", "log_norm")
 
     # ------------------------------------------------------------------
     def correct(
@@ -192,14 +193,16 @@ class EmotionCorrector:
         source_prosody: ProsodyFeatures,
         source_trajectory: EmotionTrajectory | None = None,
         output_trajectory: EmotionTrajectory | None = None,
+        f0_corr: float = 1.0,
     ) -> np.ndarray:
-        sim = _cosine(_center(source_emotion), _center(output_emotion))
+        # Gate: only run PyWorld re-synthesis when prosody is badly degraded.
+        # f0_corr < threshold means Seed-VC mangled the prosody — correct it.
+        # always_correct_f0 overrides for testing/debugging only.
+        should_correct = self.always_correct_f0 or (f0_corr < self.f0_corr_threshold)
 
-        # F0 contour transfer: always run when flag set (SER cosine on neutral speech
-        # is always ~1.0, so the threshold gate would never fire even with large F0 drift)
-        if self.always_correct_f0 or sim < self.threshold:
-            log.info("F0 correction: cos=%.3f, always=%s, mode=%s",
-                     sim, self.always_correct_f0, self.f0_mode)
+        if should_correct:
+            log.info("F0 correction: f0_corr=%.3f, threshold=%.2f, mode=%s",
+                     f0_corr, self.f0_corr_threshold, self.f0_mode)
             has_traj = (source_trajectory is not None
                         and output_trajectory is not None
                         and len(source_trajectory.frames) > 1
@@ -209,6 +212,8 @@ class EmotionCorrector:
                                               source_trajectory, output_trajectory)
             return self._correct_global(wav, sr, source_emotion, output_emotion, source_prosody)
 
+        log.info("F0 correction skipped: f0_corr=%.3f >= %.2f (Seed-VC preserved prosody)",
+                 f0_corr, self.f0_corr_threshold)
         return wav
 
     # ------------------------------------------------------------------

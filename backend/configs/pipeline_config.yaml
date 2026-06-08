@@ -5,8 +5,8 @@ audio:
 
 vad:
   threshold: 0.5
-  min_speech_ms: 250
-  min_silence_ms: 100
+  min_speech_ms: 500
+  min_silence_ms: 500
 
 models:
   whisper: "openai/whisper-small"
@@ -17,7 +17,7 @@ models:
 seed_vc:
   repo_dir: "third_party/seed-vc"
   device: "cuda"
-  convert_style: true          # accent + style conversion path (V2)
+  convert_style: false         # false = keep source prosody/emotion; true = adopt reference style
   anonymization_only: false
   diffusion_steps: 30
   length_adjust: 1.0
@@ -51,7 +51,8 @@ quality:
 
 emotion_correction:
   threshold: 0.85
-  always_correct_f0: true    # bypass SER gate for F0 — always preserve source prosody contour
+  always_correct_f0: false   # gate on f0_corr instead — PyWorld re-synthesis only when needed
+  f0_corr_threshold: 0.3     # only correct when Seed-VC f0_corr drops below this
   f0_transfer: "log_norm"    # "log_norm" (default) | "cwt" | "mean_scale"
   f0_scale_clip: [0.7, 1.5]
   energy_scale_clip: [0.7, 1.3]
@@ -76,3 +77,4 @@ accents:
   - { key: "american_english", label: "American English" }
   - { key: "korean_english",   label: "Korean-accented English" }
   - { key: "arabic_english",   label: "Arabic-accented English" }
+  - { key: "nigerian_english", label: "Nigerian English" }

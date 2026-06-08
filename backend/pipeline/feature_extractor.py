@@ -24,7 +24,12 @@ class FeatureExtractor:
         # Force English transcription — critical for accent-converted speech that may
         # sound like a different language to Whisper's language-detection head.
         forced_decoder_ids = proc.get_decoder_prompt_ids(language="en", task="transcribe")
-        out = model.generate(input_features, forced_decoder_ids=forced_decoder_ids)
+        out = model.generate(
+            input_features,
+            forced_decoder_ids=forced_decoder_ids,
+            no_repeat_ngram_size=3,
+            repetition_penalty=1.2,
+        )
         text = proc.batch_decode(out, skip_special_tokens=True)
         text = text[0].strip() if text else ""
         return text, []

@@ -152,14 +152,10 @@ def main(input_path, target_accent, output_path, metrics_out, reference_text, co
                 continue
             cand, score, meta = result
 
-            # Restore source F0 contour + energy envelope onto converted audio
-            # _NEUTRAL dummies: EmotionCorrector ignores src/out emotion when
-            # always_correct_f0=True (the cosine gate is bypassed).
-            corrected = ec.correct(
-                cand.wav, cand.sr,
-                _NEUTRAL, _NEUTRAL,
-                prosody,
-            )
+            # EmotionCorrector (PyWorld re-synthesis) disabled: raw Seed-VC output
+            # passes through. PyWorld chain degrades audio quality more than the
+            # prosody correction gains. Re-enable once a non-destructive F0 method exists.
+            corrected = cand.wav
 
             out_wavs.append(corrected)
             seg_metrics.append({
