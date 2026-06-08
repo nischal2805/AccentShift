@@ -130,7 +130,7 @@ def main(input_path, target_accent, output_path, metrics_out, reference_text, co
 
     ref_text_override = reference_text.strip() if reference_text else None
 
-    out_wavs, seg_metrics = [], []
+    out_wavs, seg_metrics, kept_segs = [], [], []
     try:
         for i, seg in enumerate(segments):
             # Source transcript: ground-truth if provided, else Whisper on source audio
@@ -162,6 +162,7 @@ def main(input_path, target_accent, output_path, metrics_out, reference_text, co
             )
 
             out_wavs.append(corrected)
+            kept_segs.append(seg)  # track for gap restoration on reassembly
             seg_metrics.append({
                 "segment":        i,
                 "chosen_backend": cand.name,
@@ -175,7 +176,10 @@ def main(input_path, target_accent, output_path, metrics_out, reference_text, co
         if ref_is_temp:
             Path(ref).unlink(missing_ok=True)
 
-    final = post.assemble(out_wavs)
+    # Inter-segment silence from source VAD timeline → restore natural pauses
+    gaps = [max(0.0, kept_segs[i + 1].start_s - kept_segs[i].end_s)
+            for i in range(len(kept_segs) - 1)]
+    final = post.assemble(out_wavs, gaps)
     final = post.loudness_normalize(final)
     sf.write(output_path, final, cfg["audio"]["sample_rate"], subtype="PCM_16")
 

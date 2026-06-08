@@ -51,7 +51,7 @@ quality:
 
 emotion_correction:
   threshold: 0.85
-  always_correct_f0: true    # bypass SER gate for F0 — always preserve source prosody contour
+  always_correct_f0: false   # OFF: WORLD resynth was making output robotic; trust Seed-VC prosody
   f0_transfer: "log_norm"    # "log_norm" (default) | "cwt" | "mean_scale"
   f0_scale_clip: [0.7, 1.5]
   energy_scale_clip: [0.7, 1.3]
