@@ -605,6 +605,26 @@
     </div>
   </div>
 
+  <!-- Step 3.5: Emotion -->
+  <div class="card" style="animation-delay: 0.35s">
+    <div class="card-label">
+      <div class="step-num" style="background:linear-gradient(135deg,#f59e0b,#ef4444)">3.5</div>
+      <h2>Emotion <span style="font-weight:400; color:var(--muted); font-size:0.85rem;">(auto-detected · override anytime)</span></h2>
+    </div>
+    <div class="emotion-grid" id="emotionGrid"></div>
+    <div class="auto-detected" id="autoDetectedLabel" style="display:none">
+      <span>🤖 Auto-detected:</span>
+      <span class="chip" id="autoDetectedChip"></span>
+      <span style="color:var(--border)">|</span>
+      <span>Click any emotion to override</span>
+    </div>
+    <div class="prosody-preview" id="prosodyPreview">
+      <div class="p-item"><span>Rate</span><span class="p-val" id="pRate">—</span></div>
+      <div class="p-item"><span>Pitch</span><span class="p-val" id="pPitch">—</span></div>
+      <div class="p-item"><span>Volume</span><span class="p-val" id="pVol">—</span></div>
+    </div>
+  </div>
+
   <!-- Step 4: Convert -->
   <div class="card" style="animation-delay: 0.4s">
     <div class="card-label">
@@ -661,6 +681,91 @@
   let transcript = '';
   let interimTranscript = '';
 
+  // ─── Emotion definitions ──────────────────────────────────────────
+  const EMOTIONS = [
+    { id: 'neutral',  label: 'Neutral',  emoji: '😐', rate: 0.92, pitch: 1.0, volume: 1.0,  color: '#64748b' },
+    { id: 'happy',   label: 'Happy',    emoji: '😊', rate: 1.10, pitch: 1.25, volume: 1.0, color: '#f59e0b' },
+    { id: 'excited', label: 'Excited',  emoji: '🤩', rate: 1.30, pitch: 1.45, volume: 1.0, color: '#ef4444' },
+    { id: 'sad',     label: 'Sad',      emoji: '😢', rate: 0.78, pitch: 0.80, volume: 0.75,color: '#3b82f6' },
+    { id: 'angry',   label: 'Angry',    emoji: '😠', rate: 1.20, pitch: 0.85, volume: 1.0, color: '#dc2626' },
+    { id: 'calm',    label: 'Calm',     emoji: '😌', rate: 0.82, pitch: 1.0,  volume: 0.85,color: '#10b981' },
+    { id: 'fearful', label: 'Fearful',  emoji: '😨', rate: 1.18, pitch: 1.35, volume: 0.88,color: '#8b5cf6' },
+  ];
+
+  let selectedEmotion = EMOTIONS[0]; // default neutral
+
+  // ─── Auto-detect emotion from text ───────────────────────────────
+  function detectEmotion(text) {
+    const t = text.toLowerCase();
+    const exclamations = (text.match(/!/g) || []).length;
+    const questions    = (text.match(/\?/g) || []).length;
+    const allCaps      = (text.match(/\b[A-Z]{3,}\b/g) || []).length;
+    const ellipsis     = (text.match(/\.{2,}/g) || []).length;
+
+    const happyWords   = /\b(great|awesome|love|happy|wonderful|amazing|fantastic|yay|yes|good|glad|thrilled|joy|excellent)\b/;
+    const sadWords     = /\b(sad|sorry|miss|lost|hurt|pain|cry|tears|unfortunately|bad|awful|depressed|lonely|grief)\b/;
+    const angryWords   = /\b(hate|angry|furious|stupid|idiot|ridiculous|unacceptable|outraged|terrible|worst|never)\b/;
+    const fearWords    = /\b(afraid|scared|worried|nervous|anxious|panic|terror|fear|help|danger|emergency)\b/;
+    const calmWords    = /\b(relax|calm|breathe|peace|gentle|slow|easy|fine|okay|alright|steady|quiet)\b/;
+
+    if (allCaps >= 2 || angryWords.test(t)) return 'angry';
+    if (exclamations >= 2 && happyWords.test(t)) return 'excited';
+    if (exclamations >= 1 && happyWords.test(t)) return 'happy';
+    if (fearWords.test(t)) return 'fearful';
+    if (sadWords.test(t) || ellipsis >= 2) return 'sad';
+    if (calmWords.test(t) || questions >= 2) return 'calm';
+    if (exclamations >= 2) return 'excited';
+    if (happyWords.test(t)) return 'happy';
+    return 'neutral';
+  }
+
+  function applyAutoDetect(text) {
+    if (!text.trim()) return;
+    const detectedId = detectEmotion(text);
+    const detected   = EMOTIONS.find(e => e.id === detectedId);
+    if (detected) {
+      selectEmotion(detected);
+      document.getElementById('autoDetectedChip').textContent = detected.emoji + ' ' + detected.label;
+      document.getElementById('autoDetectedLabel').style.display = 'flex';
+    }
+  }
+
+  // ─── Build emotion grid ───────────────────────────────────────────
+  function buildEmotionGrid() {
+    const grid = document.getElementById('emotionGrid');
+    EMOTIONS.forEach(e => {
+      const btn = document.createElement('button');
+      btn.className = 'emo-btn' + (e.id === selectedEmotion.id ? ' selected' : '');
+      btn.id = 'emo-' + e.id;
+      btn.style.background = e.id === selectedEmotion.id
+        ? `linear-gradient(135deg, ${e.color}cc, ${e.color})` : '';
+      btn.innerHTML = `<span>${e.emoji}</span><span>${e.label}</span>`;
+      btn.onclick = () => selectEmotion(e);
+      grid.appendChild(btn);
+    });
+    updateProsodyPreview();
+  }
+
+  function selectEmotion(e) {
+    selectedEmotion = e;
+    document.querySelectorAll('.emo-btn').forEach(btn => {
+      btn.classList.remove('selected');
+      btn.style.background = '';
+    });
+    const btn = document.getElementById('emo-' + e.id);
+    if (btn) {
+      btn.classList.add('selected');
+      btn.style.background = `linear-gradient(135deg, ${e.color}cc, ${e.color})`;
+    }
+    updateProsodyPreview();
+  }
+
+  function updateProsodyPreview() {
+    document.getElementById('pRate').textContent  = selectedEmotion.rate + 'x';
+    document.getElementById('pPitch').textContent = selectedEmotion.pitch + 'x';
+    document.getElementById('pVol').textContent   = Math.round(selectedEmotion.volume * 100) + '%';
+  }
+
   // ─── Build accent grid ────────────────────────────────────────────
   function buildAccentGrid() {
     const grid = document.getElementById('accentGrid');
@@ -716,6 +821,8 @@
       }
       interimTranscript = interim;
       updateTranscriptBox();
+      // Auto-detect emotion as user speaks
+      applyAutoDetect(transcript + interimTranscript);
     };
 
     recognition.onerror = (e) => {
@@ -831,6 +938,11 @@
       const chosenVoice = exactMatch || looseMatch || null;
       if (chosenVoice) utterance.voice = chosenVoice;
 
+      // Apply emotion prosody
+      utterance.rate   = selectedEmotion.rate;
+      utterance.pitch  = selectedEmotion.pitch;
+      utterance.volume = selectedEmotion.volume;
+
       utterance.onstart = () => {
         showOutputCard(text, selectedAccent, chosenVoice);
         resetConvertBtn();
@@ -873,7 +985,8 @@
     document.getElementById('outFlag').textContent = accent.flag;
     document.getElementById('outAccentName').textContent = `${accent.name} Accent`;
     const voiceName = chosenVoice ? chosenVoice.name : 'System default voice';
-    document.getElementById('outLangCode').textContent = `Voice: ${voiceName} (${accent.id})`;
+    document.getElementById('outLangCode').textContent =
+      `${selectedEmotion.emoji} ${selectedEmotion.label} · ${voiceName} · ${accent.id}`;
     // Hide the audio element — we're using Web Speech only now
     document.getElementById('audioPlayer').style.display = 'none';
     document.getElementById('outputCard').classList.add('visible');
@@ -896,6 +1009,7 @@
 
   // ─── Init ─────────────────────────────────────────────────────────
   buildAccentGrid();
+  buildEmotionGrid();
   buildWaveform();
   initSpeechRecognition();
 
