@@ -180,7 +180,12 @@ class VevoBackend(ConverterBackend):
         self._ensure_loaded()
         assert self._pipeline is not None
         src_path = _write_tmp(source.audio, source.sr)
-        ref_abs = str(Path(ref_wav_path).resolve())
+        # Vevo AR caps total input ~2000 tokens → trim the style/timbre reference
+        # to a short window (default 8s). Long refs (40s+) overflow the AR context.
+        max_ref_s = float(self.cfg.get("max_ref_s", 8.0))
+        ref_wav, ref_sr = librosa.load(ref_wav_path, sr=None, mono=True)
+        ref_wav = ref_wav[: int(max_ref_s * ref_sr)]
+        ref_abs = _write_tmp(ref_wav.astype(np.float32), ref_sr)
         with _chdir(self.repo):
             out_tensor = self._pipeline.inference_ar_and_fm(
                 src_wav_path=src_path,

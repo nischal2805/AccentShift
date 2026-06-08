@@ -138,7 +138,9 @@ def build_reference(cfg: dict, accent: str, emotion: str | None = None) -> tuple
 
 
 def build_backends(cfg: dict, mm: ModelManager):
-    backends: list[ConverterBackend] = [SeedVCBackend(cfg, mm.device)]
+    backends: list[ConverterBackend] = []
+    if cfg["seed_vc"].get("enabled", True):
+        backends.append(SeedVCBackend(cfg, mm.device))
     if cfg["vevo"]["enabled"]:
         backends.append(VevoBackend(cfg, mm.vevo_device))
     return backends
@@ -207,15 +209,23 @@ def main(input_path, target_accent, output_path, metrics_out, reference_text, co
                 continue
             cand, score, meta = result
 
-            # Parselmouth OLA emotion correction: F0 contour transfer (source→output)
-            # + per-frame energy scaling. No WORLD vocoder — OLA preserves voice quality.
-            # Fires when f0_corr < threshold; energy-only when Seed-VC already preserved F0.
-            corrected = ec.correct(
-                cand.wav, cand.sr,
-                _NEUTRAL, _NEUTRAL,
-                prosody,
-                f0_corr=meta["f0_corr"],
-            )
+            # Anti-garbage guard (Vevo angry/high-arousal segments): if the chosen
+            # candidate hallucinated past recovery (catastrophic WER), keep the clean
+            # source segment instead of emitting garbled words. Accent is lost on that
+            # segment; intelligibility + emotion are preserved. Gated off by default.
+            cat_wer = cfg.get("quality", {}).get("catastrophic_wer_fallback", 0.0)
+            if cat_wer and meta["wer"] >= cat_wer:
+                log.info("Segment %d: %s WER %.2f >= %.2f → clean-source fallback",
+                         i, cand.name, meta["wer"], cat_wer)
+                corrected = seg.audio.astype(np.float32)
+            else:
+                # Energy-only emotion correction (non-destructive RMS intensity transfer).
+                corrected = ec.correct(
+                    cand.wav, cand.sr,
+                    _NEUTRAL, _NEUTRAL,
+                    prosody,
+                    f0_corr=meta["f0_corr"],
+                )
 
             out_wavs.append(corrected)
             seg_metrics.append({

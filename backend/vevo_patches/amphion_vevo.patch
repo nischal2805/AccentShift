@@ -1,0 +1,52 @@
+warning: in the working copy of 'models/vc/autoregressive_transformer/ar_model.py', LF will be replaced by CRLF the next time Git touches it
+diff --git a/models/vc/autoregressive_transformer/ar_model.py b/models/vc/autoregressive_transformer/ar_model.py
+index cddab69..57904c5 100644
+--- a/models/vc/autoregressive_transformer/ar_model.py
++++ b/models/vc/autoregressive_transformer/ar_model.py
+@@ -304,7 +304,7 @@ class AutoregressiveTransformer(nn.Module):
+ 
+             gen_tokens = self.model.generate(
+                 inputs_embeds=llama_input_emb,
+-                do_sample=True,
++                do_sample=False,
+                 max_length=max_length,
+                 pad_token_id=self.pad_token_id,
+                 eos_token_id=self.output_eos_token_id,
+@@ -323,7 +323,7 @@ class AutoregressiveTransformer(nn.Module):
+ 
+             gen_tokens = self.model.generate(
+                 llama_input_ids,
+-                do_sample=True,
++                do_sample=False,
+                 max_length=max_length,
+                 pad_token_id=self.pad_token_id,
+                 eos_token_id=self.output_eos_token_id,
+diff --git a/models/vc/vevo/vevo_utils.py b/models/vc/vevo/vevo_utils.py
+index 15f7d30..e1c5217 100644
+--- a/models/vc/vevo/vevo_utils.py
++++ b/models/vc/vevo/vevo_utils.py
+@@ -540,8 +540,24 @@ class VevoInferencePipeline:
+             input_ids=ar_input_ids,
+             prompt_mels=self.extract_prompt_mel_feature(style_ref_speech16k),
+             prompt_output_ids=prompt_output_ids,
++            max_length=3500,        # allow longer segments (12s) to fit -> fewer seams
++            temperature=0.7,        # slightly tamed (default 0.8)
++            repeat_penalty=1.3,     # soft penalty — reduces loops/emotion-shift gibberish
++            min_new_tokens=8,       # was 50: stop near real speech end -> less trailing noise after angry
+         )
+ 
++        # Guard against the CUDA device-side assert: the AR can emit special tokens
++        # (eos/pad/bos >= output_vocab_size) mid-sequence; these overflow the diffusion
++        # codec embedding (vocab 8192) and crash the whole process. Truncate at the
++        # first out-of-range token, then clamp any stragglers into valid range.
++        _VOCAB = 8192
++        _bad = (predicted_hubert_codecs[0] >= _VOCAB) | (predicted_hubert_codecs[0] < 0)
++        if bool(_bad.any()):
++            _cut = int(_bad.nonzero()[0].item())
++            if _cut >= 1:
++                predicted_hubert_codecs = predicted_hubert_codecs[:, :_cut]
++        predicted_hubert_codecs = predicted_hubert_codecs.clamp(0, _VOCAB - 1)
++
+         ## Diffusion ##
+         timbre_ref_hubert_codecs, _ = self.extract_hubert_codec(
+             self.content_style_tokenizer, timbre_ref_speech16k, duration_reduction=False
