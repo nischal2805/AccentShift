@@ -48,7 +48,7 @@ logging.basicConfig(
 log = logging.getLogger("main")
 
 ROOT = Path(__file__).resolve().parents[1]
-CONFIG_PATH = str(ROOT / "configs" / "pipeline_config.yaml")
+CONFIG_PATH = str(ROOT / "configs" / "pipeline_vevo.yaml")  # Vevo backend (stronger accent)
 
 
 @asynccontextmanager
@@ -68,7 +68,9 @@ async def lifespan(app: FastAPI):
     ec = EmotionCorrector(cfg)
     post = Postprocessor(cfg)
 
-    backends: list[ConverterBackend] = [SeedVCBackend(cfg, mm.device)]
+    backends: list[ConverterBackend] = []
+    if cfg["seed_vc"].get("enabled", True):
+        backends.append(SeedVCBackend(cfg, mm.device))
     if cfg["vevo"]["enabled"]:
         backends.append(VevoBackend(cfg, mm.vevo_device))
 

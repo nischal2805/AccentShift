@@ -137,6 +137,25 @@ def build_reference(cfg: dict, accent: str, emotion: str | None = None) -> tuple
     return f.name, True
 
 
+def apply_accent_overrides(cfg: dict, accent: str) -> None:
+    """Merge per-accent tuning from cfg['accent_overrides'][accent] into cfg in place.
+
+    Lets each target accent dial its own knobs, e.g.:
+      vevo.max_ref_s / flow_matching_steps  → accent strength & cleanliness
+      emotion_correction.energy_scale_clip  → emotion "pop" (wider = more dynamics)
+    Shallow-merges each section dict; runs before backends/EC are built.
+    """
+    ov = (cfg.get("accent_overrides") or {}).get(accent)
+    if not ov:
+        return
+    for section, params in ov.items():
+        if isinstance(params, dict) and isinstance(cfg.get(section), dict):
+            cfg[section].update(params)
+        else:
+            cfg[section] = params
+    log.info("accent overrides applied for %s: %s", accent, ov)
+
+
 def build_backends(cfg: dict, mm: ModelManager):
     backends: list[ConverterBackend] = []
     if cfg["seed_vc"].get("enabled", True):
@@ -163,6 +182,8 @@ def main(input_path, target_accent, output_path, metrics_out, reference_text, co
     valid = {a["key"] for a in cfg["accents"]}
     if target_accent not in valid:
         raise click.BadParameter(f"target_accent must be one of {sorted(valid)}")
+
+    apply_accent_overrides(cfg, target_accent)  # per-accent knobs before building backends/EC
 
     mm  = ModelManager.get(config_path)
     pre = Preprocessor(cfg)

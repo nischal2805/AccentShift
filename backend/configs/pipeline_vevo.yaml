@@ -36,8 +36,8 @@ vevo:
   repo_dir: "third_party/Amphion"
   enabled: true
   device: "cuda"
-  flow_matching_steps: 32
-  max_ref_s: 8.0                # trim style/timbre ref (Vevo AR ~2000 token cap)
+  flow_matching_steps: 40        # global default (stronger/cleaner accent)
+  max_ref_s: 10.0               # trim style/timbre ref (Vevo AR ~2000 token cap)
   hf_repo: "amphion/Vevo"
   cache_dir: "checkpoints/Vevo"
 
@@ -81,3 +81,19 @@ accents:
   - { key: "korean_english",   label: "Korean-accented English" }
   - { key: "arabic_english",   label: "Arabic-accented English" }
   - { key: "nigerian_english", label: "Nigerian English" }
+
+# Per-accent tuning — overrides merged into cfg at runtime (run_pipeline.apply_accent_overrides)
+accent_overrides:
+  nigerian_english:
+    emotion_correction:
+      energy_scale_clip: [0.5, 1.9]    # emotion POP: wider dynamics (was flat)
+  korean_english:
+    vevo:
+      max_ref_s: 12.0                  # longer ref = stronger accent transfer
+      flow_matching_steps: 40          # cleaner accent
+  chinese_english:
+    vevo:
+      max_ref_s: 14.0                  # longer ref = stronger accent
+      flow_matching_steps: 48          # cleaner
+    emotion_correction:
+      energy_scale_clip: [0.5, 1.8]    # emotion pop
