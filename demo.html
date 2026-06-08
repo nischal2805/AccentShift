@@ -1,0 +1,912 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AccentShift — Live Demo</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0a0a14;
+      --surface: #12121f;
+      --card: #1a1a2e;
+      --border: rgba(255,255,255,0.08);
+      --accent1: #7c3aed;
+      --accent2: #06b6d4;
+      --accent3: #10b981;
+      --text: #f1f5f9;
+      --muted: #94a3b8;
+      --danger: #ef4444;
+      --glow1: rgba(124,58,237,0.4);
+      --glow2: rgba(6,182,212,0.3);
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* Animated background */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background:
+        radial-gradient(ellipse 80% 50% at 20% 10%, rgba(124,58,237,0.15) 0%, transparent 60%),
+        radial-gradient(ellipse 60% 40% at 80% 80%, rgba(6,182,212,0.12) 0%, transparent 60%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 2rem 1.5rem 4rem;
+      position: relative;
+      z-index: 1;
+    }
+
+    /* Header */
+    .header {
+      text-align: center;
+      margin-bottom: 3rem;
+      animation: fadeDown 0.6s ease both;
+    }
+
+    .logo {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.6rem;
+      margin-bottom: 1rem;
+    }
+
+    .logo-icon {
+      width: 48px; height: 48px;
+      background: linear-gradient(135deg, var(--accent1), var(--accent2));
+      border-radius: 14px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 24px;
+      box-shadow: 0 0 30px var(--glow1);
+    }
+
+    .logo-text {
+      font-size: 2rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, #a78bfa, #38bdf8);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .tagline {
+      color: var(--muted);
+      font-size: 1rem;
+      font-weight: 400;
+      letter-spacing: 0.05em;
+    }
+
+    /* Steps flow */
+    .steps-flow {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      margin-bottom: 2.5rem;
+      flex-wrap: wrap;
+      animation: fadeDown 0.7s ease 0.1s both;
+    }
+
+    .step-pill {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 0.35rem 0.9rem;
+      font-size: 0.8rem;
+      color: var(--muted);
+      display: flex; align-items: center; gap: 0.4rem;
+    }
+
+    .step-pill .dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--accent1);
+      opacity: 0.5;
+    }
+
+    .step-arrow { color: var(--border); font-size: 1.2rem; }
+
+    /* Cards */
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 1.8rem;
+      margin-bottom: 1.5rem;
+      position: relative;
+      overflow: hidden;
+      animation: fadeUp 0.6s ease both;
+    }
+
+    .card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, var(--accent1), var(--accent2));
+    }
+
+    .card:nth-child(2) { animation-delay: 0.1s; }
+    .card:nth-child(3) { animation-delay: 0.2s; }
+    .card:nth-child(4) { animation-delay: 0.3s; }
+
+    .card-label {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      margin-bottom: 1.2rem;
+    }
+
+    .card-label .step-num {
+      width: 28px; height: 28px;
+      background: linear-gradient(135deg, var(--accent1), var(--accent2));
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.75rem;
+      font-weight: 700;
+    }
+
+    .card-label h2 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    /* Accent selector grid */
+    .accent-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+      gap: 0.75rem;
+    }
+
+    .accent-btn {
+      background: var(--surface);
+      border: 1.5px solid var(--border);
+      border-radius: 12px;
+      padding: 0.75rem 1rem;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      text-align: left;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      color: var(--text);
+      font-family: inherit;
+      font-size: 0.85rem;
+      font-weight: 500;
+    }
+
+    .accent-btn:hover {
+      border-color: var(--accent1);
+      background: rgba(124,58,237,0.1);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 20px var(--glow1);
+    }
+
+    .accent-btn.selected {
+      border-color: var(--accent2);
+      background: rgba(6,182,212,0.12);
+      box-shadow: 0 0 20px var(--glow2);
+    }
+
+    .accent-btn .flag { font-size: 1.4rem; }
+
+    /* Record section */
+    .record-area {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1.2rem;
+    }
+
+    .record-btn {
+      width: 90px; height: 90px;
+      border-radius: 50%;
+      border: none;
+      background: linear-gradient(135deg, var(--accent1), #9333ea);
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 2rem;
+      transition: all 0.3s ease;
+      box-shadow: 0 0 40px var(--glow1);
+      position: relative;
+    }
+
+    .record-btn:hover {
+      transform: scale(1.05);
+      box-shadow: 0 0 60px var(--glow1);
+    }
+
+    .record-btn.recording {
+      background: linear-gradient(135deg, var(--danger), #f97316);
+      box-shadow: 0 0 60px rgba(239,68,68,0.5);
+      animation: pulse 1.2s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); box-shadow: 0 0 40px rgba(239,68,68,0.4); }
+      50% { transform: scale(1.08); box-shadow: 0 0 70px rgba(239,68,68,0.7); }
+    }
+
+    .record-hint {
+      color: var(--muted);
+      font-size: 0.85rem;
+      text-align: center;
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.4rem 1rem;
+      border-radius: 20px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      min-width: 160px;
+      justify-content: center;
+      transition: all 0.3s ease;
+    }
+
+    .status-badge.active {
+      background: rgba(239,68,68,0.1);
+      border-color: var(--danger);
+      color: #fca5a5;
+    }
+
+    .status-badge.success {
+      background: rgba(16,185,129,0.1);
+      border-color: var(--accent3);
+      color: #6ee7b7;
+    }
+
+    .status-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    .status-badge.active .status-dot { animation: blink 1s ease infinite; }
+
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.2; }
+    }
+
+    /* Transcript box */
+    .transcript-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1rem 1.2rem;
+      min-height: 80px;
+      font-size: 0.95rem;
+      line-height: 1.6;
+      color: var(--text);
+      width: 100%;
+      word-break: break-word;
+      transition: border-color 0.3s;
+    }
+
+    .transcript-box:focus {
+      outline: none;
+      border-color: var(--accent2);
+    }
+
+    .transcript-box.has-text {
+      border-color: rgba(6,182,212,0.4);
+    }
+
+    .transcript-box[contenteditable]:empty::before {
+      content: attr(data-placeholder);
+      color: var(--muted);
+      pointer-events: none;
+    }
+
+    /* Convert button */
+    .convert-btn {
+      width: 100%;
+      padding: 1rem;
+      border: none;
+      border-radius: 14px;
+      background: linear-gradient(135deg, var(--accent1), var(--accent2));
+      color: white;
+      font-family: inherit;
+      font-size: 1rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.6rem;
+      letter-spacing: 0.02em;
+      box-shadow: 0 8px 32px var(--glow1);
+    }
+
+    .convert-btn:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 12px 40px var(--glow1);
+    }
+
+    .convert-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .convert-btn .spinner {
+      width: 18px; height: 18px;
+      border: 2.5px solid rgba(255,255,255,0.3);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      display: none;
+    }
+
+    .convert-btn.loading .spinner { display: block; }
+    .convert-btn.loading .btn-icon { display: none; }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* Audio output */
+    .output-card {
+      background: var(--card);
+      border: 1.5px solid rgba(16,185,129,0.3);
+      border-radius: 20px;
+      padding: 1.8rem;
+      margin-bottom: 1.5rem;
+      animation: fadeUp 0.5s ease both;
+      box-shadow: 0 0 40px rgba(16,185,129,0.08);
+      display: none;
+    }
+
+    .output-card.visible { display: block; }
+
+    .output-header {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      margin-bottom: 1.2rem;
+      color: var(--accent3);
+      font-weight: 600;
+      font-size: 1rem;
+    }
+
+    .audio-wrap {
+      background: var(--surface);
+      border-radius: 12px;
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .accent-info {
+      display: flex;
+      align-items: center;
+      gap: 0.8rem;
+    }
+
+    .accent-info .flag-big { font-size: 2rem; }
+
+    .accent-info .info-text h3 {
+      font-size: 1rem;
+      font-weight: 600;
+    }
+
+    .accent-info .info-text p {
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+
+    audio {
+      width: 100%;
+      height: 40px;
+      border-radius: 8px;
+    }
+
+    audio::-webkit-media-controls-panel {
+      background: var(--surface);
+    }
+
+    /* Waveform visualizer */
+    .waveform {
+      height: 50px;
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      justify-content: center;
+    }
+
+    .wave-bar {
+      width: 3px;
+      border-radius: 3px;
+      background: linear-gradient(180deg, var(--accent2), var(--accent1));
+      height: 8px;
+      transition: height 0.15s ease;
+    }
+
+    .waveform.active .wave-bar {
+      animation: wave 0.8s ease-in-out infinite;
+    }
+
+    .wave-bar:nth-child(odd) { animation-delay: 0.1s !important; }
+    .wave-bar:nth-child(3n) { animation-delay: 0.2s !important; }
+    .wave-bar:nth-child(4n) { animation-delay: 0.35s !important; }
+
+    @keyframes wave {
+      0%, 100% { height: 6px; }
+      50% { height: 40px; }
+    }
+
+    /* Toast */
+    .toast {
+      position: fixed;
+      bottom: 2rem;
+      left: 50%;
+      transform: translateX(-50%) translateY(100px);
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 0.75rem 1.5rem;
+      font-size: 0.9rem;
+      color: var(--text);
+      transition: transform 0.4s cubic-bezier(0.34,1.56,0.64,1);
+      z-index: 100;
+      max-width: 340px;
+      text-align: center;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    }
+
+    .toast.show { transform: translateX(-50%) translateY(0); }
+    .toast.error { border-color: rgba(239,68,68,0.4); }
+
+    /* Animations */
+    @keyframes fadeDown {
+      from { opacity: 0; transform: translateY(-20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Info bar */
+    .info-bar {
+      background: rgba(124,58,237,0.08);
+      border: 1px solid rgba(124,58,237,0.2);
+      border-radius: 12px;
+      padding: 0.75rem 1.2rem;
+      font-size: 0.82rem;
+      color: #c4b5fd;
+      margin-bottom: 1.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      animation: fadeDown 0.5s ease 0.3s both;
+    }
+
+    /* Browser support notice */
+    .no-support {
+      display: none;
+      background: rgba(239,68,68,0.1);
+      border: 1px solid rgba(239,68,68,0.3);
+      border-radius: 12px;
+      padding: 1rem 1.2rem;
+      color: #fca5a5;
+      font-size: 0.9rem;
+      text-align: center;
+      margin-bottom: 1rem;
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+
+  <!-- Header -->
+  <div class="header">
+    <div class="logo">
+      <div class="logo-icon">🎙️</div>
+      <span class="logo-text">AccentShift</span>
+    </div>
+    <p class="tagline">Speak → Transcribe → Play in any accent • Live Demo</p>
+  </div>
+
+  <!-- Flow pills -->
+  <div class="steps-flow">
+    <div class="step-pill"><span class="dot"></span> 🎤 Record Voice</div>
+    <span class="step-arrow">→</span>
+    <div class="step-pill"><span class="dot"></span> 📝 Auto-Transcribe</div>
+    <span class="step-arrow">→</span>
+    <div class="step-pill"><span class="dot"></span> 🌍 Select Accent</div>
+    <span class="step-arrow">→</span>
+    <div class="step-pill"><span class="dot"></span> 🔊 Play Output</div>
+  </div>
+
+  <div class="no-support" id="noSupport">
+    ⚠️ Your browser doesn't support the Web Speech API. Please use <strong>Google Chrome</strong> for this demo.
+  </div>
+
+  <div class="info-bar">
+    💡 This demo uses your browser's built-in speech recognition + Google TTS — no backend required!
+  </div>
+
+  <!-- Step 1: Select Accent -->
+  <div class="card" style="animation-delay: 0.1s">
+    <div class="card-label">
+      <div class="step-num">1</div>
+      <h2>Choose Target Accent</h2>
+    </div>
+    <div class="accent-grid" id="accentGrid">
+      <!-- populated by JS -->
+    </div>
+  </div>
+
+  <!-- Step 2: Record -->
+  <div class="card" style="animation-delay: 0.2s">
+    <div class="card-label">
+      <div class="step-num">2</div>
+      <h2>Record Your Voice</h2>
+    </div>
+    <div class="record-area">
+      <div class="waveform" id="waveform">
+        <!-- bars added by JS -->
+      </div>
+      <button class="record-btn" id="recordBtn" title="Click to start recording">🎤</button>
+      <div class="status-badge" id="statusBadge">
+        <span class="status-dot"></span>
+        <span id="statusText">Click mic to start</span>
+      </div>
+      <p class="record-hint">Speak clearly — transcription is live and instant</p>
+    </div>
+  </div>
+
+  <!-- Step 3: Transcript -->
+  <div class="card" style="animation-delay: 0.3s">
+    <div class="card-label">
+      <div class="step-num">3</div>
+      <h2>Transcribed Text <span style="font-weight:400; color:var(--muted); font-size:0.85rem;">(editable)</span></h2>
+    </div>
+    <div
+      class="transcript-box"
+      id="transcriptBox"
+      contenteditable="true"
+      data-placeholder="Your speech will appear here in real-time… or type directly."
+    ></div>
+    <div style="margin-top: 0.75rem; display: flex; gap: 0.5rem; justify-content: flex-end;">
+      <button onclick="clearTranscript()" style="
+        background: none; border: 1px solid var(--border); border-radius: 8px;
+        color: var(--muted); padding: 0.35rem 0.8rem; font-size: 0.8rem;
+        cursor: pointer; font-family: inherit; transition: all 0.2s;
+      " onmouseover="this.style.borderColor='var(--danger)'" onmouseout="this.style.borderColor='var(--border)'">
+        🗑 Clear
+      </button>
+    </div>
+  </div>
+
+  <!-- Step 4: Convert -->
+  <div class="card" style="animation-delay: 0.4s">
+    <div class="card-label">
+      <div class="step-num">4</div>
+      <h2>Generate Accented Audio</h2>
+    </div>
+    <button class="convert-btn" id="convertBtn" onclick="convertToAccent()">
+      <div class="spinner"></div>
+      <span class="btn-icon">🔊</span>
+      <span id="convertLabel">Convert with Accent</span>
+    </button>
+  </div>
+
+  <!-- Output -->
+  <div class="output-card" id="outputCard">
+    <div class="output-header">✅ Accented Audio Ready</div>
+    <div class="audio-wrap">
+      <div class="accent-info">
+        <span class="flag-big" id="outFlag"></span>
+        <div class="info-text">
+          <h3 id="outAccentName"></h3>
+          <p id="outLangCode"></p>
+        </div>
+      </div>
+      <audio id="audioPlayer" controls autoplay></audio>
+    </div>
+  </div>
+
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+  // ─── Accent definitions ───────────────────────────────────────────
+  const ACCENTS = [
+    { id: 'en-US', name: 'American', flag: '🇺🇸', desc: 'US English' },
+    { id: 'en-GB', name: 'British', flag: '🇬🇧', desc: 'UK English' },
+    { id: 'en-AU', name: 'Australian', flag: '🇦🇺', desc: 'Aussie English' },
+    { id: 'en-IN', name: 'Indian', flag: '🇮🇳', desc: 'Indian English' },
+    { id: 'en-ZA', name: 'South African', flag: '🇿🇦', desc: 'SA English' },
+    { id: 'en-IE', name: 'Irish', flag: '🇮🇪', desc: 'Irish English' },
+    { id: 'fr-FR', name: 'French', flag: '🇫🇷', desc: 'French accent' },
+    { id: 'de-DE', name: 'German', flag: '🇩🇪', desc: 'German accent' },
+    { id: 'es-ES', name: 'Spanish', flag: '🇪🇸', desc: 'Spanish accent' },
+    { id: 'ja-JP', name: 'Japanese', flag: '🇯🇵', desc: 'Japanese accent' },
+    { id: 'zh-CN', name: 'Chinese', flag: '🇨🇳', desc: 'Mandarin accent' },
+    { id: 'ar-SA', name: 'Arabic', flag: '🇸🇦', desc: 'Arabic accent' },
+  ];
+
+  let selectedAccent = ACCENTS[0];
+  let recognition = null;
+  let isRecording = false;
+  let transcript = '';
+  let interimTranscript = '';
+
+  // ─── Build accent grid ────────────────────────────────────────────
+  function buildAccentGrid() {
+    const grid = document.getElementById('accentGrid');
+    ACCENTS.forEach(a => {
+      const btn = document.createElement('button');
+      btn.className = 'accent-btn' + (a.id === selectedAccent.id ? ' selected' : '');
+      btn.innerHTML = `<span class="flag">${a.flag}</span><span>${a.name}<br><small style="color:var(--muted);font-weight:400">${a.desc}</small></span>`;
+      btn.onclick = () => selectAccent(a, btn);
+      grid.appendChild(btn);
+    });
+  }
+
+  function selectAccent(a, btn) {
+    selectedAccent = a;
+    document.querySelectorAll('.accent-btn').forEach(b => b.classList.remove('selected'));
+    btn.classList.add('selected');
+    showToast(`Accent set to ${a.flag} ${a.name}`);
+  }
+
+  // ─── Waveform bars ────────────────────────────────────────────────
+  function buildWaveform() {
+    const wf = document.getElementById('waveform');
+    for (let i = 0; i < 28; i++) {
+      const bar = document.createElement('div');
+      bar.className = 'wave-bar';
+      wf.appendChild(bar);
+    }
+  }
+
+  // ─── Speech Recognition ───────────────────────────────────────────
+  function initSpeechRecognition() {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      document.getElementById('noSupport').style.display = 'flex';
+      document.getElementById('recordBtn').disabled = true;
+      return;
+    }
+
+    recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = 'en-US'; // always recognize in English
+
+    recognition.onresult = (event) => {
+      let interim = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const t = event.results[i].transcript;
+        if (event.results[i].isFinal) {
+          transcript += t + ' ';
+        } else {
+          interim = t;
+        }
+      }
+      interimTranscript = interim;
+      updateTranscriptBox();
+    };
+
+    recognition.onerror = (e) => {
+      if (e.error === 'not-allowed') {
+        showToast('❌ Microphone access denied. Please allow mic permissions.', true);
+      }
+      stopRecording();
+    };
+
+    recognition.onend = () => {
+      if (isRecording) {
+        // restart if still meant to be recording
+        try { recognition.start(); } catch(e) {}
+      }
+    };
+  }
+
+  function updateTranscriptBox() {
+    const box = document.getElementById('transcriptBox');
+    const combined = transcript + (interimTranscript ? `<span style="color:var(--muted)">${interimTranscript}</span>` : '');
+    box.innerHTML = combined || '';
+    if (transcript.trim()) box.classList.add('has-text');
+  }
+
+  function startRecording() {
+    if (!recognition) return;
+    isRecording = true;
+    try { recognition.start(); } catch(e) {}
+
+    const btn = document.getElementById('recordBtn');
+    btn.classList.add('recording');
+    btn.innerHTML = '⏹';
+    btn.title = 'Click to stop';
+
+    document.getElementById('waveform').classList.add('active');
+    setStatus('active', '🔴 Recording…');
+  }
+
+  function stopRecording() {
+    isRecording = false;
+    if (recognition) { try { recognition.stop(); } catch(e) {} }
+
+    const btn = document.getElementById('recordBtn');
+    btn.classList.remove('recording');
+    btn.innerHTML = '🎤';
+    btn.title = 'Click to start recording';
+
+    document.getElementById('waveform').classList.remove('active');
+
+    if (transcript.trim()) {
+      setStatus('success', '✅ Ready to convert');
+    } else {
+      setStatus('', 'Click mic to start');
+    }
+  }
+
+  function toggleRecording() {
+    if (isRecording) {
+      stopRecording();
+    } else {
+      startRecording();
+    }
+  }
+
+  function setStatus(type, msg) {
+    const badge = document.getElementById('statusBadge');
+    const text = document.getElementById('statusText');
+    badge.className = 'status-badge' + (type ? ' ' + type : '');
+    text.textContent = msg;
+  }
+
+  function clearTranscript() {
+    transcript = '';
+    interimTranscript = '';
+    document.getElementById('transcriptBox').innerHTML = '';
+    document.getElementById('transcriptBox').classList.remove('has-text');
+    document.getElementById('outputCard').classList.remove('visible');
+    setStatus('', 'Click mic to start');
+  }
+
+  // ─── TTS — uses ONLY Web Speech Synthesis (one voice, no duplicates) ────────
+  function convertToAccent() {
+    const box = document.getElementById('transcriptBox');
+    const text = (box.innerText || box.textContent || '').trim();
+
+    if (!text) {
+      showToast('⚠️ Please record or type some text first!', true);
+      return;
+    }
+
+    const btn = document.getElementById('convertBtn');
+    btn.classList.add('loading');
+    btn.disabled = true;
+    document.getElementById('convertLabel').textContent = 'Generating…';
+
+    // Stop any audio element that might be playing
+    const audioEl = document.getElementById('audioPlayer');
+    audioEl.pause();
+    audioEl.src = '';
+
+    if (window.speechSynthesis) {
+      speechSynthesis.cancel(); // stop any ongoing speech first
+
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = selectedAccent.id;
+      utterance.rate = 0.92;
+      utterance.pitch = 1;
+
+      // Pick the FIRST available voice matching the accent lang, just one
+      const voices = speechSynthesis.getVoices();
+      const exactMatch = voices.find(v => v.lang === selectedAccent.id);
+      const looseMatch = voices.find(v => v.lang.startsWith(selectedAccent.id.split('-')[0]));
+      const chosenVoice = exactMatch || looseMatch || null;
+      if (chosenVoice) utterance.voice = chosenVoice;
+
+      utterance.onstart = () => {
+        showOutputCard(text, selectedAccent, chosenVoice);
+        resetConvertBtn();
+      };
+
+      utterance.onerror = (e) => {
+        showToast('⚠️ Speech failed — try again or use Chrome.', true);
+        resetConvertBtn();
+      };
+
+      speechSynthesis.speak(utterance);
+
+    } else {
+      showToast('❌ Web Speech not supported. Use Google Chrome.', true);
+      resetConvertBtn();
+    }
+  }
+
+  function useGoogleTTS(text, btn) {
+    const lang = selectedAccent.id;
+    const encoded = encodeURIComponent(text.substring(0, 200));
+    const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encoded}&tl=${lang}&client=tw-ob`;
+
+    const audio = document.getElementById('audioPlayer');
+    audio.src = url;
+    audio.oncanplay = () => {
+      audio.play();
+      showOutputCard(text, selectedAccent);
+      resetConvertBtn();
+    };
+    audio.onerror = () => {
+      showToast('⚠️ Audio blocked by CORS. Using Web Speech synthesis instead.', true);
+      resetConvertBtn();
+      showOutputCard(text, selectedAccent);
+    };
+    audio.load();
+  }
+
+  function showOutputCard(text, accent, chosenVoice) {
+    document.getElementById('outFlag').textContent = accent.flag;
+    document.getElementById('outAccentName').textContent = `${accent.name} Accent`;
+    const voiceName = chosenVoice ? chosenVoice.name : 'System default voice';
+    document.getElementById('outLangCode').textContent = `Voice: ${voiceName} (${accent.id})`;
+    // Hide the audio element — we're using Web Speech only now
+    document.getElementById('audioPlayer').style.display = 'none';
+    document.getElementById('outputCard').classList.add('visible');
+  }
+
+  function resetConvertBtn() {
+    const btn = document.getElementById('convertBtn');
+    btn.classList.remove('loading');
+    btn.disabled = false;
+    document.getElementById('convertLabel').textContent = 'Convert with Accent';
+  }
+
+  // ─── Toast notification ───────────────────────────────────────────
+  function showToast(msg, isError = false) {
+    const toast = document.getElementById('toast');
+    toast.textContent = msg;
+    toast.className = 'toast show' + (isError ? ' error' : '');
+    setTimeout(() => { toast.className = 'toast'; }, 3000);
+  }
+
+  // ─── Init ─────────────────────────────────────────────────────────
+  buildAccentGrid();
+  buildWaveform();
+  initSpeechRecognition();
+
+  document.getElementById('recordBtn').addEventListener('click', toggleRecording);
+
+  // Load voices (may be async)
+  if (window.speechSynthesis) {
+    speechSynthesis.getVoices();
+    speechSynthesis.onvoiceschanged = () => speechSynthesis.getVoices();
+  }
+</script>
+
+</body>
+</html>
