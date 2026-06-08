@@ -21,8 +21,8 @@ seed_vc:
   anonymization_only: false
   diffusion_steps: 40          # more steps = cleaner accent imprint
   length_adjust: 1.0
-  intelligibility_cfg_rate: 0.7
-  similarity_cfg_rate: 2.8    # boosted accent pull toward reference (B used 2.0; push without touching emotion)
+  intelligibility_cfg_rate: 0.4
+  similarity_cfg_rate: 3.0
   top_p: 0.9
   temperature: 1.0
   repetition_penalty: 1.3

@@ -38,6 +38,7 @@ dependencies = [
     # CUDA torch — index override keeps uv from swapping in CPU builds on sync
     "torch==2.6.0",
     "torchaudio==2.6.0",
+    "praat-parselmouth>=0.4.3",
 ]
 
 [project.optional-dependencies]

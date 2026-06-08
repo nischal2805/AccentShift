@@ -151,6 +151,9 @@ async def convert(
     post: Postprocessor = st.post
     backends: list[ConverterBackend] = st.backends
 
+    from pipeline.types import Segment, EmotionVec
+    NEUTRAL = EmotionVec(0.5, 0.5, 0.5)
+
     segments = pre.segment(src_audio)
 
     out_wavs: list[np.ndarray] = []
@@ -161,28 +164,34 @@ async def convert(
         src_emotion = fe.emotion(seg)
         prosody = fe.prosody(seg, n_words=len(text.split()))
         candidates = [b.convert(seg, ref_path) for b in backends]
-        result = qs.select(candidates, seg, src_emotion, text)
+        result = qs.select(candidates, seg, prosody, text)  # select scores on prosody (F0), not emotion
         if result is None:
-            # No candidates produced — skip segment
             log.warning("Segment produced no candidates; skipping.")
             continue
         cand, score, meta = result
-        corrected = ec.correct(cand.wav, cand.sr, src_emotion,
-                               meta["emotion_output"], prosody)
+        # convert_style=false preserves source prosody; energy EC restores intensity (method=energy)
+        corrected = ec.correct(cand.wav, cand.sr, NEUTRAL, NEUTRAL, prosody,
+                               f0_corr=meta["f0_corr"])
         out_wavs.append(corrected)
-        eo = meta["emotion_output"]
+
+        # Measure output emotion on the corrected audio → emotion-preservation metric
+        out_seg = Segment(audio=corrected, start_s=0.0,
+                          end_s=len(corrected) / cand.sr, sr=cand.sr)
+        out_emotion = fe.emotion(out_seg)
+        sa, oa = src_emotion.to_array(), out_emotion.to_array()
+        emo_sim = float(np.dot(sa, oa) / (np.linalg.norm(sa) * np.linalg.norm(oa) + 1e-9))
         seg_metrics.append({
             "chosen_backend": cand.name,
             "score": score,
-            "emotion_sim": meta["emotion_sim"],
+            "emotion_sim": max(0.0, min(1.0, emo_sim)),
             "wer": meta["wer"],
             "mos": meta["mos"],
             "valence_source": src_emotion.valence,
-            "valence_output": eo.valence,
+            "valence_output": out_emotion.valence,
             "arousal_source": src_emotion.arousal,
-            "arousal_output": eo.arousal,
+            "arousal_output": out_emotion.arousal,
             "dominance_source": src_emotion.dominance,
-            "dominance_output": eo.dominance,
+            "dominance_output": out_emotion.dominance,
         })
 
     final = post.assemble(out_wavs)

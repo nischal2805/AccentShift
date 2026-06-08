@@ -33,7 +33,7 @@ from pipeline.converter import SeedVCBackend, VevoBackend, ConverterBackend
 from pipeline.quality_selector import QualitySelector
 from pipeline.emotion_corrector import EmotionCorrector
 from pipeline.postprocessor import Postprocessor
-from pipeline.types import EmotionVec
+from pipeline.types import EmotionVec, Segment
 
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -43,29 +43,75 @@ ROOT = Path(__file__).resolve().parent
 _NEUTRAL = EmotionVec(0.5, 0.5, 0.5)
 
 
-def build_reference(cfg: dict, accent: str) -> tuple[str, bool]:
-    """Concatenate all reference WAVs for the target accent into a temp file.
+_EMOTIONS = ("angry", "happy", "sad", "neutral")
 
-    Returns (temp_path, is_temp) where is_temp=True means caller must delete the file.
-    Clips are resampled to pipeline SR and joined with 0.3s silence.
-    Raises click.BadParameter with a clear message if the reference dir is empty.
+
+def emotion_to_label(vec: EmotionVec) -> str:
+    """Map a V/A/D emotion vector (sigmoid [0,1], neutral≈0.5) to an emotion label.
+
+    Valence-arousal quadrants (the dimensions SER discriminates best):
+      high arousal + low  valence → angry
+      high arousal + high valence → happy
+      low  arousal + low  valence → sad
+      otherwise                   → neutral
+    Used to pick a target-accent reference clip carrying the SOURCE emotion, so
+    convert_style=true transfers accent + matching emotional tone (no resynthesis).
+    """
+    a, v = vec.arousal, vec.valence
+    hi_a, lo_a = a > 0.55, a < 0.45
+    hi_v, lo_v = v > 0.55, v < 0.45
+    if hi_a and lo_v:
+        return "angry"
+    if hi_a and hi_v:
+        return "happy"
+    if lo_a and lo_v:
+        return "sad"
+    return "neutral"
+
+
+def build_reference(cfg: dict, accent: str, emotion: str | None = None) -> tuple[str, bool]:
+    """Pick the target-accent reference WAV matching the source emotion.
+
+    Bank layout (emotion-matched, preferred):
+        references/<accent>/<emotion>.wav   e.g. chinese_english/angry.wav
+    Selection: <emotion> → neutral → largest available clip (graceful fallback,
+    so a bank with only a neutral clip still works and auto-upgrades as clips are
+    added). If multiple files share an emotion prefix they are concatenated.
+
+    Returns (path, is_temp); is_temp=True means caller must delete the temp file.
     """
     ref_dir = ROOT / cfg["paths"]["references"] / accent
-    wavs = sorted(
-        [p for p in ref_dir.glob("*.wav") if p.stat().st_size > 1000],
-        key=lambda p: p.stat().st_size,
-        reverse=True,
-    )
-    if not wavs:
+    all_wavs = [p for p in ref_dir.glob("*.wav") if p.stat().st_size > 1000]
+    if not all_wavs:
         raise click.BadParameter(
             f"No reference WAVs found in {ref_dir}\n"
-            f"Add 3-10 WAV files (5-15s each) of a native {accent} speaker.\n"
-            f"L2-Arctic speakers: indian=ASI, chinese=BWC, arabic=ZHAA, korean=HJK"
+            f"Add emotion clips named <emotion>.wav (angry/happy/sad/neutral), 5-15s each,\n"
+            f"of a native {accent} speaker. Minimum: neutral.wav."
         )
+
+    # Emotion-matched selection with fallback chain.
+    def by_prefix(label: str) -> list:
+        return sorted([p for p in all_wavs if p.stem.lower().startswith(label)],
+                      key=lambda p: p.stat().st_size, reverse=True)
+
+    wavs, chosen = [], None
+    if emotion:
+        wavs = by_prefix(emotion)
+        if wavs:
+            chosen = emotion
+    if not wavs:
+        wavs = by_prefix("neutral")
+        if wavs:
+            chosen = "neutral"
+    if not wavs:  # no emotion-named clips at all → legacy flat bank: largest clip
+        wavs = sorted(all_wavs, key=lambda p: p.stat().st_size, reverse=True)
+        chosen = "fallback"
+    log.info("reference for %s: emotion=%s → %s (%d clip(s))",
+             accent, emotion or "n/a", chosen, len(wavs))
 
     # Single clip: return direct path, no temp file needed
     if len(wavs) == 1:
-        log.info("reference for %s: 1 clip → %s", accent, wavs[0].name)
+        log.info("  → %s", wavs[0].name)
         return str(wavs[0]), False
 
     sr = cfg["audio"]["sample_rate"]
@@ -123,10 +169,19 @@ def main(input_path, target_accent, output_path, metrics_out, reference_text, co
     ec  = EmotionCorrector(cfg)
     post = Postprocessor(cfg)
     backends = build_backends(cfg, mm)
-    ref, ref_is_temp = build_reference(cfg, target_accent)
 
     audio    = load_audio(input_path, sr=cfg["audio"]["sample_rate"])
     segments = pre.segment(audio)
+
+    # Detect global source emotion → pick the target-accent reference carrying that
+    # same emotion, so convert_style=true transfers accent + matching emotional tone.
+    emo_probe = Segment(audio=audio[: 15 * cfg["audio"]["sample_rate"]],
+                        start_s=0.0, end_s=0.0, sr=cfg["audio"]["sample_rate"])
+    src_emotion = fe.emotion(emo_probe)
+    emo_label = emotion_to_label(src_emotion)
+    log.info("source emotion: A=%.2f V=%.2f D=%.2f → %s",
+             src_emotion.arousal, src_emotion.valence, src_emotion.dominance, emo_label)
+    ref, ref_is_temp = build_reference(cfg, target_accent, emotion=emo_label)
 
     ref_text_override = reference_text.strip() if reference_text else None
 
@@ -152,10 +207,15 @@ def main(input_path, target_accent, output_path, metrics_out, reference_text, co
                 continue
             cand, score, meta = result
 
-            # EmotionCorrector (PyWorld re-synthesis) disabled: raw Seed-VC output
-            # passes through. PyWorld chain degrades audio quality more than the
-            # prosody correction gains. Re-enable once a non-destructive F0 method exists.
-            corrected = cand.wav
+            # Parselmouth OLA emotion correction: F0 contour transfer (source→output)
+            # + per-frame energy scaling. No WORLD vocoder — OLA preserves voice quality.
+            # Fires when f0_corr < threshold; energy-only when Seed-VC already preserved F0.
+            corrected = ec.correct(
+                cand.wav, cand.sr,
+                _NEUTRAL, _NEUTRAL,
+                prosody,
+                f0_corr=meta["f0_corr"],
+            )
 
             out_wavs.append(corrected)
             seg_metrics.append({

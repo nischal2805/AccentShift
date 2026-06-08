@@ -1,12 +1,12 @@
 audio:
   sample_rate: 16000
   mono: true
-  max_segment_s: 30.0          # convert_style=false has no AR → no repeat risk → bigger segs = faster
+  max_segment_s: 15.0          # cap AR runtime/repeats
 
 vad:
   threshold: 0.5
   min_speech_ms: 500
-  min_silence_ms: 500
+  min_silence_ms: 350
 
 models:
   whisper: "openai/whisper-small"
@@ -17,15 +17,15 @@ models:
 seed_vc:
   repo_dir: "third_party/seed-vc"
   device: "cuda"
-  convert_style: false         # WINNER (B_style_off): preserves source prosody/emotion natively; accent from timbre
+  convert_style: true          # TRUE TEST: AR re-articulates phonemes/rhythm → real accent pronunciation
   anonymization_only: false
-  diffusion_steps: 40          # more steps = cleaner accent imprint
+  diffusion_steps: 30          # fewer = faster (accent feel comes from AR, not diffusion count)
   length_adjust: 1.0
   intelligibility_cfg_rate: 0.7
-  similarity_cfg_rate: 2.8    # boosted accent pull toward reference (B used 2.0; push without touching emotion)
-  top_p: 0.9
-  temperature: 1.0
-  repetition_penalty: 1.3
+  similarity_cfg_rate: 2.8
+  top_p: 0.8                   # lower = less AR hallucination/repeat
+  temperature: 0.7
+  repetition_penalty: 1.5
   ar_checkpoint_path: null      # null = auto-download from HF (Plachta/Seed-VC)
                                 # after finetune: set to checkpoints/seedvc_finetuned/<accent>/AR_epoch_*.pth
   cfm_checkpoint_path: "checkpoints/seedvc_finetuned/all_ft/CFM_epoch_00016_step_14000.pth"     # after finetune: set to checkpoints/seedvc_finetuned/<accent>/CFM_epoch_*.pth

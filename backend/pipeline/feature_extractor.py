@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 import librosa
 import numpy as np
-import pyworld
 import torch
 from .types import Segment, EmotionVec, ProsodyFeatures
 
@@ -50,9 +49,19 @@ class FeatureExtractor:
         return EmotionVec(valence=valence, arousal=arousal, dominance=dominance)
 
     def prosody(self, seg: Segment, n_words: int) -> ProsodyFeatures:
-        x = seg.audio.astype(np.float64)  # pyworld REQUIRES float64
-        f0, timeaxis = pyworld.harvest(x, seg.sr)  # type: ignore[attr-defined]
-        f0 = pyworld.stonemask(x, f0, timeaxis, seg.sr)  # type: ignore[attr-defined]
-        energy = librosa.feature.rms(y=seg.audio)[0]
+        # PYIN (probabilistic YIN) for F0 — more robust than PyWorld HARVEST on
+        # emotional/expressive speech (handles high-arousal pitch excursions, breathy voice).
+        # Returns 0.0 for unvoiced frames (matching PyWorld convention).
+        hop = 256  # 16ms at 16kHz — matches energy RMS hop for aligned arrays
+        f0, _voiced_flag, _voiced_prob = librosa.pyin(
+            y=seg.audio,
+            fmin=librosa.note_to_hz("C2"),   # 65 Hz — floor for all voice types
+            fmax=librosa.note_to_hz("C7"),   # 2093 Hz — covers excited/child speech
+            sr=seg.sr,
+            hop_length=hop,
+            fill_na=0.0,                     # 0.0 for unvoiced (matches PyWorld)
+        )
+        timeaxis = np.arange(len(f0)) * hop / seg.sr
+        energy = librosa.feature.rms(y=seg.audio, hop_length=hop)[0]
         rate = n_words / seg.duration_s if seg.duration_s > 0 else 0.0
         return ProsodyFeatures(f0=f0, timeaxis=timeaxis, energy=energy, speaking_rate=rate)
