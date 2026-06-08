@@ -13,15 +13,28 @@ class Postprocessor:
         self.crossfade_ms = cfg["postprocess"]["crossfade_ms"]
         self.target_lufs = cfg["postprocess"]["target_lufs"]
 
-    def assemble(self, wavs: list[np.ndarray]) -> np.ndarray:
+    def assemble(self, wavs: list[np.ndarray],
+                 gaps_s: list[float] | None = None) -> np.ndarray:
+        """Join converted segments back into one waveform.
+
+        gaps_s[i] = original silence (seconds) between segment i and i+1, from the
+        source VAD timeline. When a real pause existed there, re-insert it instead of
+        crossfading — otherwise utterances slam together and sound choppy ("cut cut").
+        Adjacent segments with no gap are crossfaded as before.
+        """
         if not wavs:
             return np.zeros(0, dtype=np.float32)
         if len(wavs) == 1:
             return wavs[0].astype(np.float32)
         xf = int(self.crossfade_ms / 1000 * self.sr)
         out = wavs[0].astype(np.float32)
-        for nxt in wavs[1:]:
+        for idx, nxt in enumerate(wavs[1:]):
             nxt = nxt.astype(np.float32)
+            gap = gaps_s[idx] if gaps_s is not None and idx < len(gaps_s) else 0.0
+            if gap > 0.01:  # real pause existed → restore it, no crossfade
+                sil = np.zeros(int(gap * self.sr), dtype=np.float32)
+                out = np.concatenate([out, sil, nxt])
+                continue
             n = min(xf, len(out), len(nxt))
             if n > 0:
                 fade = np.linspace(1, 0, n, dtype=np.float32)
