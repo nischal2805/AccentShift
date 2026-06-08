@@ -595,6 +595,12 @@
       data-placeholder="Your speech will appear here in real-time… or type directly."
     ></div>
     <div style="margin-top: 0.75rem; display: flex; gap: 0.5rem; justify-content: flex-end;">
+      <button id="analyseBtn" onclick="triggerEmotionAnalysis()" style="
+        background: linear-gradient(135deg,rgba(124,58,237,0.2),rgba(6,182,212,0.2));
+        border: 1px solid rgba(124,58,237,0.4); border-radius: 8px;
+        color: #c4b5fd; padding: 0.35rem 0.9rem; font-size: 0.82rem;
+        cursor: pointer; font-family: inherit; transition: all 0.2s; font-weight:600;
+      ">🔍 Analyse Emotion</button>
       <button onclick="clearTranscript()" style="
         background: none; border: 1px solid var(--border); border-radius: 8px;
         color: var(--muted); padding: 0.35rem 0.8rem; font-size: 0.8rem;
@@ -609,16 +615,22 @@
   <div class="card" style="animation-delay: 0.35s">
     <div class="card-label">
       <div class="step-num" style="background:linear-gradient(135deg,#f59e0b,#ef4444)">3.5</div>
-      <h2>Emotion <span style="font-weight:400; color:var(--muted); font-size:0.85rem;">(auto-detected · override anytime)</span></h2>
+      <h2>Emotion <span style="font-weight:400; color:var(--muted); font-size:0.85rem;">AI-detected from text · override anytime</span></h2>
     </div>
+
+    <!-- AI status bar -->
+    <div id="emoStatusBar" style="
+      display:flex; align-items:center; gap:0.6rem; margin-bottom:1rem;
+      font-size:0.8rem; color:var(--muted); min-height:24px;
+    ">
+      <span id="emoStatusText">Type or record text, then click 🔍 Analyse Emotion</span>
+      <span id="emoSpinner" style="display:none; width:14px; height:14px; border:2px solid rgba(124,58,237,0.3); border-top-color:#7c3aed; border-radius:50%; animation:spin 0.7s linear infinite;"></span>
+      <span id="emoConfidence" style="display:none; margin-left:auto; background:rgba(16,185,129,0.15); border:1px solid rgba(16,185,129,0.3); border-radius:12px; padding:0.15rem 0.6rem; color:#6ee7b7; font-weight:600;"></span>
+    </div>
+
     <div class="emotion-grid" id="emotionGrid"></div>
-    <div class="auto-detected" id="autoDetectedLabel" style="display:none">
-      <span>🤖 Auto-detected:</span>
-      <span class="chip" id="autoDetectedChip"></span>
-      <span style="color:var(--border)">|</span>
-      <span>Click any emotion to override</span>
-    </div>
-    <div class="prosody-preview" id="prosodyPreview">
+
+    <div class="prosody-preview" id="prosodyPreview" style="margin-top:1rem;">
       <div class="p-item"><span>Rate</span><span class="p-val" id="pRate">—</span></div>
       <div class="p-item"><span>Pitch</span><span class="p-val" id="pPitch">—</span></div>
       <div class="p-item"><span>Volume</span><span class="p-val" id="pVol">—</span></div>
@@ -694,39 +706,73 @@
 
   let selectedEmotion = EMOTIONS[0]; // default neutral
 
-  // ─── Auto-detect emotion from text ───────────────────────────────
-  function detectEmotion(text) {
-    const t = text.toLowerCase();
-    const exclamations = (text.match(/!/g) || []).length;
-    const questions    = (text.match(/\?/g) || []).length;
-    const allCaps      = (text.match(/\b[A-Z]{3,}\b/g) || []).length;
-    const ellipsis     = (text.match(/\.{2,}/g) || []).length;
+  // ─── HF label → our emotion id ───────────────────────────────────
+  const HF_MAP = {
+    joy:      'happy',
+    surprise: 'excited',
+    anger:    'angry',
+    disgust:  'angry',
+    fear:     'fearful',
+    sadness:  'sad',
+    neutral:  'neutral',
+  };
 
-    const happyWords   = /\b(great|awesome|love|happy|wonderful|amazing|fantastic|yay|yes|good|glad|thrilled|joy|excellent)\b/;
-    const sadWords     = /\b(sad|sorry|miss|lost|hurt|pain|cry|tears|unfortunately|bad|awful|depressed|lonely|grief)\b/;
-    const angryWords   = /\b(hate|angry|furious|stupid|idiot|ridiculous|unacceptable|outraged|terrible|worst|never)\b/;
-    const fearWords    = /\b(afraid|scared|worried|nervous|anxious|panic|terror|fear|help|danger|emergency)\b/;
-    const calmWords    = /\b(relax|calm|breathe|peace|gentle|slow|easy|fine|okay|alright|steady|quiet)\b/;
-
-    if (allCaps >= 2 || angryWords.test(t)) return 'angry';
-    if (exclamations >= 2 && happyWords.test(t)) return 'excited';
-    if (exclamations >= 1 && happyWords.test(t)) return 'happy';
-    if (fearWords.test(t)) return 'fearful';
-    if (sadWords.test(t) || ellipsis >= 2) return 'sad';
-    if (calmWords.test(t) || questions >= 2) return 'calm';
-    if (exclamations >= 2) return 'excited';
-    if (happyWords.test(t)) return 'happy';
-    return 'neutral';
+  // ─── Call Hugging Face Inference API ─────────────────────────────
+  // Model: j-hartmann/emotion-english-distilroberta-base
+  // Outputs anger | disgust | fear | joy | neutral | sadness | surprise
+  async function detectEmotionAI(text) {
+    const res = await fetch(
+      'https://api-inference.huggingface.co/models/j-hartmann/emotion-english-distilroberta-base',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ inputs: text.trim().substring(0, 512) }),
+      }
+    );
+    if (!res.ok) throw new Error('HF API error ' + res.status);
+    const data = await res.json();
+    // data = [[{label, score}, ...]]
+    const results = Array.isArray(data[0]) ? data[0] : data;
+    results.sort((a, b) => b.score - a.score);
+    return { hfLabel: results[0].label.toLowerCase(), score: results[0].score };
   }
 
-  function applyAutoDetect(text) {
+  let emoDebounceTimer = null;
+
+  function triggerEmotionAnalysis() {
+    const box = document.getElementById('transcriptBox');
+    const text = (box.innerText || box.textContent || '').trim();
+    if (!text) { showToast('⚠️ Type or record some text first!', true); return; }
+    applyAutoDetect(text);
+  }
+
+  async function applyAutoDetect(text) {
     if (!text.trim()) return;
-    const detectedId = detectEmotion(text);
-    const detected   = EMOTIONS.find(e => e.id === detectedId);
-    if (detected) {
-      selectEmotion(detected);
-      document.getElementById('autoDetectedChip').textContent = detected.emoji + ' ' + detected.label;
-      document.getElementById('autoDetectedLabel').style.display = 'flex';
+
+    // Show loading
+    document.getElementById('emoStatusText').textContent = '🧠 Analysing with AI…';
+    document.getElementById('emoSpinner').style.display = 'inline-block';
+    document.getElementById('emoConfidence').style.display = 'none';
+
+    try {
+      const { hfLabel, score } = await detectEmotionAI(text);
+      const emotionId = HF_MAP[hfLabel] || 'neutral';
+      const detected  = EMOTIONS.find(e => e.id === emotionId);
+
+      if (detected) {
+        selectEmotion(detected);
+        document.getElementById('emoStatusText').textContent =
+          `🤖 AI detected: ${detected.emoji} ${detected.label}  ·  click any button to override`;
+        const confEl = document.getElementById('emoConfidence');
+        confEl.textContent = Math.round(score * 100) + '% confidence';
+        confEl.style.display = 'inline-block';
+      }
+    } catch (err) {
+      // API might be loading model (cold start) — retry once after 10s
+      document.getElementById('emoStatusText').textContent = '⏳ Model warming up… retrying in 10s';
+      setTimeout(() => applyAutoDetect(text), 10000);
+    } finally {
+      document.getElementById('emoSpinner').style.display = 'none';
     }
   }
 
@@ -821,8 +867,12 @@
       }
       interimTranscript = interim;
       updateTranscriptBox();
-      // Auto-detect emotion as user speaks
-      applyAutoDetect(transcript + interimTranscript);
+      // Debounce auto-detect: wait 1.5s after last word before calling API
+      clearTimeout(emoDebounceTimer);
+      emoDebounceTimer = setTimeout(() => {
+        const fullText = transcript + interimTranscript;
+        if (fullText.trim().length > 10) applyAutoDetect(fullText);
+      }, 1500);
     };
 
     recognition.onerror = (e) => {
